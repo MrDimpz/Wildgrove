@@ -9,6 +9,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { WebSocketServer, WebSocket } from 'ws';
+import { MysqlSanctuaryStore } from './mysqlStore.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -933,6 +934,20 @@ function buildCommunitySummaries() {
 }
 
 export async function startServer() {
+  let mysqlStore = null;
+  if (MysqlSanctuaryStore.hasConfig()) {
+    try {
+      mysqlStore = await MysqlSanctuaryStore.create();
+      if (mysqlStore) {
+        db = await mysqlStore.loadAll(buildSeedSanctuaries(), buildSeedMarketplace(), buildSeedChat());
+        console.log('Wildgrove Sanctuary connected to MySQL database (wg_* tables ready).');
+      }
+    } catch (err) {
+      console.warn('MySQL connection failed, falling back to local JSON store:', err?.code || err?.message || 'unknown error');
+      mysqlStore = null;
+    }
+  }
+
   const app = express();
   app.disable('x-powered-by');
   app.set('trust proxy', 1);
@@ -1039,7 +1054,13 @@ export async function startServer() {
           if (!db.chat.some((c) => c.id === chatMsg.id)) {
             db.chat.push(chatMsg);
             if (db.chat.length > 80) db.chat = db.chat.slice(-80);
-            persistDatabase();
+            if (mysqlStore) {
+              mysqlStore.insertChat(chatMsg).catch((err) => {
+                console.warn('MySQL chat write error:', err?.code || err?.message);
+              });
+            } else {
+              persistDatabase();
+            }
             broadcast({ type: 'chat:message', message: chatMsg });
           }
         }
@@ -1058,25 +1079,37 @@ export async function startServer() {
     return res.json({
       ok: true,
       service: 'wildgrove-sanctuary',
+      storage: mysqlStore ? 'mysql' : 'file',
       online: wss.clients.size,
       sanctuaries: Object.keys(db.sanctuaries).length,
     });
   });
 
   // --- Cloud Sync API ---
-  app.get('/api/sync/:code', (req, res) => {
+  app.get('/api/sync/:code', async (req, res) => {
     const code = sanitizeCode(req.params.code);
     if (code.length < 4) {
       return res.status(400).json({ error: 'Invalid sync code' });
     }
-    const record = db.sanctuaries[code];
+    let record = db.sanctuaries[code] || null;
+    if (mysqlStore) {
+      try {
+        const fresh = await mysqlStore.getSanctuary(code);
+        if (fresh) {
+          record = fresh;
+          db.sanctuaries[code] = fresh;
+        }
+      } catch (err) {
+        console.warn('MySQL sync read error:', err?.code || err?.message);
+      }
+    }
     if (!record) {
       return res.status(404).json({ error: 'Sanctuary sync code not found' });
     }
     return res.json({ sanctuary: record });
   });
 
-  app.put('/api/sync/:code', (req, res) => {
+  app.put('/api/sync/:code', async (req, res) => {
     const code = sanitizeCode(req.params.code);
     if (code.length < 4) {
       return res.status(400).json({ error: 'Invalid sync code' });
@@ -1087,7 +1120,15 @@ export async function startServer() {
     }
     const sanitized = sanitizeSanctuary(code, incoming);
     db.sanctuaries[code] = sanitized;
-    persistDatabase();
+    if (mysqlStore) {
+      try {
+        await mysqlStore.upsertSanctuary(sanitized);
+      } catch (err) {
+        console.warn('MySQL sync write error:', err?.code || err?.message);
+      }
+    } else {
+      persistDatabase();
+    }
     broadcast({ type: 'leaderboard:updated', leaderboard: buildLeaderboard() });
     return res.json({ ok: true, sanctuary: sanitized });
   });
@@ -1097,7 +1138,7 @@ export async function startServer() {
     return res.json({ sanctuaries: buildCommunitySummaries() });
   });
 
-  app.post('/api/sanctuaries/:code/visit-gift', (req, res) => {
+  app.post('/api/sanctuaries/:code/visit-gift', async (req, res) => {
     const code = sanitizeCode(req.params.code);
     const visitorName = sanitizeText(req.body?.visitorName, 28, 'A Fellow Keeper');
     const enclosureId = sanitizeText(req.body?.enclosureId, 64, '');
@@ -1112,7 +1153,15 @@ export async function startServer() {
     }
     target.prestige = computePrestige(target);
     target.updatedAt = Date.now();
-    persistDatabase();
+    if (mysqlStore) {
+      try {
+        await mysqlStore.upsertSanctuary(target);
+      } catch (err) {
+        console.warn('MySQL visit-gift write error:', err?.code || err?.message);
+      }
+    } else {
+      persistDatabase();
+    }
 
     broadcast({
       type: 'sanctuary:gift',
@@ -1129,7 +1178,7 @@ export async function startServer() {
     return res.json({ listings: db.marketplace });
   });
 
-  app.post('/api/marketplace', (req, res) => {
+  app.post('/api/marketplace', async (req, res) => {
     const { sellerCode, sellerName, itemType, itemId, itemLabel, quantity, priceCoins, priceGems, rarity } = req.body || {};
     const cleanSeller = sanitizeCode(sellerCode);
     const cleanItemId = sanitizeText(itemId, 48);
@@ -1157,13 +1206,21 @@ export async function startServer() {
 
     db.marketplace.unshift(listing);
     if (db.marketplace.length > 40) db.marketplace = db.marketplace.slice(0, 40);
-    persistDatabase();
+    if (mysqlStore) {
+      try {
+        await mysqlStore.upsertListing(listing);
+      } catch (err) {
+        console.warn('MySQL marketplace write error:', err?.code || err?.message);
+      }
+    } else {
+      persistDatabase();
+    }
 
     broadcast({ type: 'marketplace:updated', listings: db.marketplace });
     return res.json({ ok: true, listing });
   });
 
-  app.post('/api/marketplace/:id/buy', (req, res) => {
+  app.post('/api/marketplace/:id/buy', async (req, res) => {
     const id = sanitizeText(req.params.id, 64);
     const buyerCode = sanitizeCode(req.body?.buyerCode || '');
     const idx = db.marketplace.findIndex((l) => l.id === id);
@@ -1185,13 +1242,25 @@ export async function startServer() {
       }
     }
 
+    let refillListing = null;
     if (db.marketplace.length < 4) {
       const refills = buildSeedMarketplace();
       const pick = refills[Math.floor(Math.random() * refills.length)];
-      db.marketplace.push({ ...pick, id: `mkt-r-${Date.now()}`, createdAt: Date.now() });
+      refillListing = { ...pick, id: `mkt-r-${Date.now()}`, createdAt: Date.now() };
+      db.marketplace.push(refillListing);
     }
 
-    persistDatabase();
+    if (mysqlStore) {
+      try {
+        await mysqlStore.deleteListing(listing.id);
+        if (seller) await mysqlStore.upsertSanctuary(seller);
+        if (refillListing) await mysqlStore.upsertListing(refillListing);
+      } catch (err) {
+        console.warn('MySQL marketplace buy error:', err?.code || err?.message);
+      }
+    } else {
+      persistDatabase();
+    }
     broadcast({ type: 'marketplace:updated', listings: db.marketplace });
     return res.json({ ok: true, purchased: listing });
   });
@@ -1255,7 +1324,11 @@ export async function startServer() {
     if (shuttingDown) return;
     shuttingDown = true;
     clearInterval(heartbeatInterval);
-    flushDatabaseNow();
+    if (!mysqlStore) {
+      flushDatabaseNow();
+    } else {
+      mysqlStore.close().catch(() => {});
+    }
 
     wss.clients.forEach((client) => {
       try {

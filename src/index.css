@@ -1,0 +1,54 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --font-display: 'Fraunces', Georgia, serif;
+    --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  }
+
+  html,
+  body,
+  #root {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    font-family: var(--font-sans);
+    touch-action: none;
+  }
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+.font-mono-num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Custom subtle scrollbars for sanctuary drawers */
+.sanctuary-scroll::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.sanctuary-scroll::-webkit-scrollbar-track {
+  background: rgba(38, 49, 41, 0.05);
+  border-radius: 999px;
+}
+
+.sanctuary-scroll::-webkit-scrollbar-thumb {
+  background: rgba(38, 49, 41, 0.22);
+  border-radius: 999px;
+}
+
+.sanctuary-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(38, 49, 41, 0.36);
+}
+
+.sanctuary-modal {
+  touch-action: pan-y;
+}

@@ -9,8 +9,8 @@
   },
   "scripts": {
     "dev": "NODE_ENV=development tsx server.ts",
-    "start": "NODE_ENV=production node server.ts",
-    "build": "vite build",
+    "start": "NODE_ENV=production UV_THREADPOOL_SIZE=2 node --v8-pool-size=1 server.ts",
+    "build": "RAYON_NUM_THREADS=1 TOKIO_WORKER_THREADS=1 ROLLDOWN_MAX_BLOCKING_THREADS=2 UV_THREADPOOL_SIZE=2 node --v8-pool-size=1 ./node_modules/vite/bin/vite.js build",
     "preview": "vite preview",
     "lint": "tsc --noEmit"
   },

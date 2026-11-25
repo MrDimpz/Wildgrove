@@ -869,20 +869,32 @@ function loadDatabase() {
 let db = loadDatabase();
 let saveTimer = null;
 
+function flushDatabaseNow() {
+  if (saveTimer) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+  }
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    const tmpPath = `${DB_PATH}.tmp`;
+    fs.writeFileSync(tmpPath, JSON.stringify(db, null, 2), 'utf-8');
+    fs.renameSync(tmpPath, DB_PATH);
+  } catch (err) {
+    console.warn('Database disk persistence skipped (using in-memory store):', err?.message || err);
+  }
+}
+
 function persistDatabase() {
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
-    try {
-      if (!fs.existsSync(DATA_DIR)) {
-        fs.mkdirSync(DATA_DIR, { recursive: true });
-      }
-      const tmpPath = `${DB_PATH}.tmp`;
-      fs.writeFileSync(tmpPath, JSON.stringify(db, null, 2), 'utf-8');
-      fs.renameSync(tmpPath, DB_PATH);
-    } catch (err) {
-      console.warn('Database disk persistence skipped (using in-memory store):', err?.message || err);
-    }
+    saveTimer = null;
+    flushDatabaseNow();
   }, 250);
+  if (typeof saveTimer.unref === 'function') {
+    saveTimer.unref();
+  }
 }
 
 function buildLeaderboard() {
@@ -927,6 +939,10 @@ export async function startServer() {
   app.use(express.json({ limit: '512kb' }));
 
   const server = http.createServer(app);
+  server.keepAliveTimeout = 15000;
+  server.headersTimeout = 20000;
+
+  const MAX_WS_CLIENTS = 100;
   const wss = new WebSocketServer({
     noServer: true,
     maxPayload: 16 * 1024,
@@ -936,6 +952,11 @@ export async function startServer() {
     try {
       const pathname = new URL(request.url || '/', `http://${request.headers.host || 'localhost'}`).pathname;
       if (pathname === '/ws') {
+        if (wss.clients.size >= MAX_WS_CLIENTS) {
+          socket.write('HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n');
+          socket.destroy();
+          return;
+        }
         wss.handleUpgrade(request, socket, head, (ws) => {
           wss.emit('connection', ws, request);
         });
@@ -944,6 +965,24 @@ export async function startServer() {
       socket.destroy();
     }
   });
+
+  const heartbeatInterval = setInterval(() => {
+    wss.clients.forEach((client) => {
+      if (client.isAlive === false) {
+        client.terminate();
+        return;
+      }
+      client.isAlive = false;
+      try {
+        client.ping();
+      } catch {
+        client.terminate();
+      }
+    });
+  }, 30000);
+  if (typeof heartbeatInterval.unref === 'function') {
+    heartbeatInterval.unref();
+  }
 
   const broadcast = (payload) => {
     const encoded = JSON.stringify(payload);
@@ -956,6 +995,10 @@ export async function startServer() {
 
   wss.on('connection', (ws) => {
     let lastChatAt = 0;
+    ws.isAlive = true;
+    ws.on('pong', () => {
+      ws.isAlive = true;
+    });
 
     ws.send(
       JSON.stringify({
@@ -1168,9 +1211,9 @@ export async function startServer() {
   });
 
   // --- Frontend Serving (Dev Vite Middleware vs Production Static dist/) ---
-  const isDevMode = process.env.NODE_ENV === 'development';
-  const hasBuiltDist = fs.existsSync(INDEX_HTML_PATH);
-  const shouldUseViteDev = isDevMode || (!hasBuiltDist && process.env.NODE_ENV !== 'production');
+  // Only load Vite in explicit development mode so production servers never
+  // spawn bundler or file-watcher threads on shared hosting.
+  const shouldUseViteDev = process.env.NODE_ENV === 'development';
 
   if (shouldUseViteDev) {
     const { createServer: createViteServer } = await import('vite');
@@ -1187,12 +1230,6 @@ export async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    if (!fs.existsSync(INDEX_HTML_PATH)) {
-      console.log('Production dist/ not found — building frontend via Vite API...');
-      const { build: viteBuild } = await import('vite');
-      await viteBuild({ root: ROOT_DIR });
-    }
-
     app.use(
       express.static(DIST_DIR, {
         maxAge: '1h',
@@ -1207,9 +1244,48 @@ export async function startServer() {
       if (fs.existsSync(INDEX_HTML_PATH)) {
         return res.sendFile(INDEX_HTML_PATH);
       }
-      return res.status(503).send('Wildgrove Sanctuary frontend build is initializing. Please refresh shortly.');
+      return res
+        .status(503)
+        .send('Wildgrove Sanctuary frontend build not found. Please run npm run build before starting.');
     });
   }
+
+  let shuttingDown = false;
+  const shutdown = () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    clearInterval(heartbeatInterval);
+    flushDatabaseNow();
+
+    wss.clients.forEach((client) => {
+      try {
+        client.terminate();
+      } catch {
+        // Ignore
+      }
+    });
+    wss.close();
+
+    if (typeof server.closeIdleConnections === 'function') {
+      server.closeIdleConnections();
+    }
+    server.close(() => {
+      process.exit(0);
+    });
+
+    const forceTimer = setTimeout(() => {
+      if (typeof server.closeAllConnections === 'function') {
+        server.closeAllConnections();
+      }
+      process.exit(0);
+    }, 2500);
+    if (typeof forceTimer.unref === 'function') {
+      forceTimer.unref();
+    }
+  };
+
+  process.once('SIGTERM', shutdown);
+  process.once('SIGINT', shutdown);
 
   const PORT = Number(process.env.PORT) || 3000;
   server.listen(PORT, '0.0.0.0', () => {

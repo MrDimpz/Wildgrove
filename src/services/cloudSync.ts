@@ -241,7 +241,8 @@ export class SanctuarySocketClient {
   private listeners: RealtimeListeners;
   private closed = false;
   private reconnectTimer: number | null = null;
-  private reconnectDelay = 2000;
+  private reconnectDelay = 3000;
+  private consecutiveFailures = 0;
   private pendingChatQueue: Array<Record<string, unknown>> = [];
 
   constructor(listeners: RealtimeListeners) {
@@ -272,6 +273,21 @@ export class SanctuarySocketClient {
     }
   }
 
+  private scheduleReconnect(): void {
+    if (this.closed || this.reconnectTimer !== null) return;
+    // Stop aggressive retries after 5 consecutive failures; fall back to calm 60s check
+    const delay = this.consecutiveFailures >= 5 ? 60000 : this.reconnectDelay;
+    this.reconnectDelay = Math.min(30000, Math.round(this.reconnectDelay * 1.8));
+    this.reconnectTimer = window.setTimeout(() => {
+      this.reconnectTimer = null;
+      if (typeof document !== 'undefined' && document.hidden) {
+        this.scheduleReconnect();
+        return;
+      }
+      this.connect();
+    }, delay);
+  }
+
   private connect(): void {
     if (this.closed || typeof window === 'undefined') return;
     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -280,9 +296,12 @@ export class SanctuarySocketClient {
     try {
       const ws = new WebSocket(url);
       this.ws = ws;
+      let opened = false;
 
       ws.onopen = () => {
-        this.reconnectDelay = 2000;
+        opened = true;
+        this.reconnectDelay = 3000;
+        this.consecutiveFailures = 0;
         // Flush any buffered chat messages sent while reconnecting
         while (this.pendingChatQueue.length > 0 && ws.readyState === WebSocket.OPEN) {
           const queued = this.pendingChatQueue.shift();
@@ -318,10 +337,11 @@ export class SanctuarySocketClient {
       };
 
       ws.onclose = () => {
+        if (!opened) {
+          this.consecutiveFailures += 1;
+        }
         if (!this.closed) {
-          const delay = this.reconnectDelay;
-          this.reconnectDelay = Math.min(15000, Math.round(this.reconnectDelay * 1.5));
-          this.reconnectTimer = window.setTimeout(() => this.connect(), delay);
+          this.scheduleReconnect();
         }
       };
 
@@ -329,7 +349,8 @@ export class SanctuarySocketClient {
         ws.close();
       };
     } catch {
-      this.reconnectTimer = window.setTimeout(() => this.connect(), 5000);
+      this.consecutiveFailures += 1;
+      this.scheduleReconnect();
     }
   }
 

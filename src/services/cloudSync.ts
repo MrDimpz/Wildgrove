@@ -20,24 +20,70 @@ const FALLBACK_SANCTUARIES_KEY = 'wildgrove_fallback_sanctuaries_v1';
 const FALLBACK_MARKET_KEY = 'wildgrove_fallback_market_v1';
 const FALLBACK_CHAT_KEY = 'wildgrove_fallback_chat_v1';
 const FALLBACK_TRADES_KEY = 'wildgrove_fallback_trades_v1';
+const WORLD_RESET_KEY = 'wildgrove_world_reset_epoch_v1';
 
 // Detects once per page load whether the Express backend is running (/api/health)
 // or if the app is deployed as a static Vite site (dist/ only).
 let backendAvailablePromise: Promise<boolean> | null = null;
 
+export async function fetchServerHealthInfo(): Promise<{ ok: boolean; worldResetAt: number }> {
+  try {
+    const res = await fetch('/api/health', { cache: 'no-store' });
+    if (!res.ok) return { ok: false, worldResetAt: 0 };
+    const ct = res.headers.get('content-type') || '';
+    if (!ct.includes('application/json')) return { ok: false, worldResetAt: 0 };
+    const body = (await res.json()) as { ok?: boolean; worldResetAt?: number };
+    return {
+      ok: body?.ok === true,
+      worldResetAt: typeof body?.worldResetAt === 'number' && Number.isFinite(body.worldResetAt)
+        ? body.worldResetAt
+        : 0,
+    };
+  } catch {
+    return { ok: false, worldResetAt: 0 };
+  }
+}
+
 function isBackendAvailable(): Promise<boolean> {
   if (!backendAvailablePromise) {
-    backendAvailablePromise = fetch('/api/health', { cache: 'no-store' })
-      .then(async (res) => {
-        if (!res.ok) return false;
-        const ct = res.headers.get('content-type') || '';
-        if (!ct.includes('application/json')) return false;
-        const body = (await res.json()) as { ok?: boolean };
-        return body?.ok === true;
-      })
-      .catch(() => false);
+    backendAvailablePromise = fetchServerHealthInfo().then((info) => info.ok);
   }
   return backendAvailablePromise;
+}
+
+export function getLocalWorldResetEpoch(): number {
+  try {
+    const raw = localStorage.getItem(WORLD_RESET_KEY);
+    if (!raw) return 0;
+    const n = Number(raw);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  } catch {
+    return 0;
+  }
+}
+
+export function setLocalWorldResetEpoch(epoch: number): void {
+  try {
+    if (Number.isFinite(epoch) && epoch > 0) {
+      localStorage.setItem(WORLD_RESET_KEY, String(Math.floor(epoch)));
+    }
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+export function clearLocalPlayerData(nextResetEpoch?: number): void {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(FALLBACK_SANCTUARIES_KEY);
+    localStorage.removeItem(FALLBACK_CHAT_KEY);
+    localStorage.removeItem(FALLBACK_TRADES_KEY);
+    if (typeof nextResetEpoch === 'number' && Number.isFinite(nextResetEpoch) && nextResetEpoch > 0) {
+      localStorage.setItem(WORLD_RESET_KEY, String(Math.floor(nextResetEpoch)));
+    }
+  } catch {
+    // Ignore storage errors
+  }
 }
 
 // Computer-generated sanctuaries removed — Friends & Directory display only real player sanctuaries.
@@ -588,6 +634,7 @@ export interface RealtimeListeners {
   onMarketplaceUpdate: (listings: MarketplaceListing[]) => void;
   onLeaderboardUpdate: (leaderboard: LeaderboardEntry[]) => void;
   onSanctuaryGift: (targetCode: string, visitorName: string, enclosureName: string) => void;
+  onServerReset?: (resetAt: number, isLiveBroadcast: boolean) => void;
 }
 
 export class SanctuarySocketClient {
@@ -709,6 +756,13 @@ export class SanctuarySocketClient {
             }
             if (Array.isArray(data.marketplace)) this.listeners.onMarketplaceUpdate(data.marketplace);
             if (Array.isArray(data.leaderboard)) this.listeners.onLeaderboardUpdate(data.leaderboard);
+            if (typeof data.worldResetAt === 'number' && data.worldResetAt > 0) {
+              this.listeners.onServerReset?.(data.worldResetAt, false);
+            }
+          } else if (data.type === 'server:reset') {
+            if (data.resetSanctuaries !== false && typeof data.resetAt === 'number' && data.resetAt > 0) {
+              this.listeners.onServerReset?.(data.resetAt, true);
+            }
           } else if (data.type === 'presence' && typeof data.onlineCount === 'number') {
             this.listeners.onPresence(data.onlineCount);
           } else if (data.type === 'chat:message' && data.message) {

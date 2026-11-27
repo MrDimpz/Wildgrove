@@ -16,6 +16,7 @@ export interface NewFarmSetupPayload {
 
 interface NewFarmModalProps {
   canCancel?: boolean;
+  resetNotice?: boolean;
   onCancel?: () => void;
   onConfirm: (payload: NewFarmSetupPayload) => void;
 }
@@ -45,7 +46,7 @@ const THEME_OPTIONS: Array<{
 
 const SPECIES_LIST = Object.values(SPECIES_CATALOG);
 
-export function NewFarmModal({ canCancel, onCancel, onConfirm }: NewFarmModalProps) {
+export function NewFarmModal({ canCancel, resetNotice, onCancel, onConfirm }: NewFarmModalProps) {
   const [keeperName, setKeeperName] = useState('');
   const [sanctuaryName, setSanctuaryName] = useState('');
   const [sanctuaryMotto, setSanctuaryMotto] = useState('');
@@ -117,6 +118,11 @@ export function NewFarmModal({ canCancel, onCancel, onConfirm }: NewFarmModalPro
 
         {/* Scrollable Form Body */}
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+          {resetNotice && (
+            <div className="px-3.5 py-2.5 rounded-2xl bg-[#FFF6DC] border border-[#C98A1B]/30 text-xs text-[#6B470B] leading-relaxed">
+              The Wildgrove server has been freshly reset. Create your new sanctuary profile below to begin with a brand-new starting meadow and guided tutorial.
+            </div>
+          )}
           {/* Display Name & Sanctuary Name */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">

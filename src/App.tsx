@@ -62,18 +62,22 @@ import {
   SanctuarySocketClient,
   buyMarketplaceListing,
   cancelMarketplaceListing,
+  clearLocalPlayerData,
   createDirectTrade,
   createMarketplaceListing,
   fetchCommunitySanctuaries,
   fetchDirectTrades,
   fetchLeaderboard,
   fetchMarketplaceListings,
+  fetchServerHealthInfo,
+  getLocalWorldResetEpoch,
   loadLocalSanctuary,
   pullCloudSave,
   pushCloudSave,
   respondDirectTrade,
   saveLocalSanctuary,
   sendVisitGift,
+  setLocalWorldResetEpoch,
 } from './services/cloudSync';
 import { TitleScreen } from './components/TitleScreen';
 import { TopHud } from './components/TopHud';
@@ -171,6 +175,7 @@ export default function App() {
   const [screen, setScreen] = useState<'title' | 'playing'>('title');
   const [hasExistingSave, setHasExistingSave] = useState<boolean>(() => Boolean(loadLocalSanctuary()));
   const [showNewFarmModal, setShowNewFarmModal] = useState(false);
+  const [serverResetNotice, setServerResetNotice] = useState(false);
   const [sanctuary, setSanctuary] = useState<SanctuaryState>(() => {
     const saved = loadLocalSanctuary();
     return saved ? normalizeSanctuaryState(saved) : createStarterSanctuary();
@@ -268,6 +273,20 @@ export default function App() {
   photoModeRef.current = photoMode;
   const chatNotifsEnabledRef = useRef(chatNotificationsEnabled);
   chatNotifsEnabledRef.current = chatNotificationsEnabled;
+  const hadInitialSaveRef = useRef<boolean>(hasExistingSave);
+  const lastAppliedResetRef = useRef<number>(getLocalWorldResetEpoch());
+  const tutorialBaselineRef = useRef<{
+    feeds: number;
+    grooms: number;
+    harvests: number;
+    placedTotal: number;
+  }>({
+    feeds: sanctuary.stats.totalFeeds,
+    grooms: sanctuary.stats.totalGrooms,
+    harvests: sanctuary.stats.totalHarvests,
+    placedTotal:
+      sanctuary.enclosures.length + sanctuary.crops.length + sanctuary.decorations.length,
+  });
 
   // Reflect unread chat count in browser tab title
   useEffect(() => {
@@ -360,6 +379,7 @@ export default function App() {
     const decayInterval = window.setInterval(() => {
       if (visitingRef.current) return;
       setSanctuary((prev) => {
+        if (prev.onboardingCompleted === false) return prev;
         const decayed = applyCareDecayToState(prev, Date.now());
         const changed = decayed.enclosures.some(
           (e, i) =>
@@ -1416,6 +1436,67 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, [screen, weatherEnabled, terrainTheme, pushToast]);
 
+  // --- Apply Admin Server Reset (live broadcast or returning player) ---
+  const handleServerWorldReset = useCallback(
+    (resetAt: number, isLiveBroadcast: boolean) => {
+      if (!resetAt || resetAt <= lastAppliedResetRef.current) return;
+      if (!isLiveBroadcast && !hadInitialSaveRef.current) {
+        // Brand-new player visiting after an earlier reset: record epoch without showing a reset alert
+        lastAppliedResetRef.current = resetAt;
+        setLocalWorldResetEpoch(resetAt);
+        return;
+      }
+
+      lastAppliedResetRef.current = resetAt;
+      if (syncTimerRef.current !== null) {
+        clearTimeout(syncTimerRef.current);
+        syncTimerRef.current = null;
+      }
+      clearLocalPlayerData(resetAt);
+
+      const freshStarter = createStarterSanctuary();
+      setVisitingSanctuary(null);
+      setEditMode(false);
+      setMovingItem(null);
+      setPendingEditTarget(null);
+      setShowDemolishConfirm(false);
+      setPlacementChoice(null);
+      setSelectedEnclosureId(null);
+      setActiveDrawer(null);
+      setShowCircusModal(false);
+      setPhotoMode(false);
+      setSnapshotUrl(null);
+      setUnreadChatCount(0);
+      setChatNotifications([]);
+      setDirectTrades([]);
+      setCommunitySanctuaries([]);
+      seenChatIdsRef.current.clear();
+
+      const starterTheme = freshStarter.preferredTheme || 'meadow';
+      setTerrainTheme(starterTheme);
+      engineRef.current?.setTerrainTheme(starterTheme);
+      setSanctuary(freshStarter);
+      tutorialBaselineRef.current = {
+        feeds: 0,
+        grooms: 0,
+        harvests: 0,
+        placedTotal:
+          freshStarter.enclosures.length +
+          freshStarter.crops.length +
+          freshStarter.decorations.length,
+      };
+      setHasExistingSave(false);
+      hadInitialSaveRef.current = false;
+      setPendingIdleCoins(0);
+      setServerResetNotice(true);
+      setScreen('playing');
+      setShowNewFarmModal(true);
+      window.setTimeout(() => engineRef.current?.resetCamera(), 80);
+      pushToast('Server reset! Set up your new sanctuary to begin.', 'gold');
+    },
+    [pushToast],
+  );
+
   // --- Connect Real-Time WebSocket & Initial Cloud Sync ---
   useEffect(() => {
     const client = new SanctuarySocketClient({
@@ -1470,28 +1551,44 @@ export default function App() {
           pushToast(`${visitorName} left a Care Gift for ${enclosureName}!`, 'gold');
         }
       },
+      onServerReset: (resetAt, isLiveBroadcast) => {
+        handleServerWorldReset(resetAt, isLiveBroadcast);
+      },
     });
     socketRef.current = client;
 
     void (async () => {
-      await pushCloudSave(sanctuaryRef.current);
+      const health = await fetchServerHealthInfo();
+      let wasReset = false;
+      if (health.ok && health.worldResetAt > lastAppliedResetRef.current) {
+        if (hadInitialSaveRef.current) {
+          handleServerWorldReset(health.worldResetAt, false);
+          wasReset = true;
+        } else {
+          lastAppliedResetRef.current = health.worldResetAt;
+          setLocalWorldResetEpoch(health.worldResetAt);
+        }
+      }
+      if (!wasReset && hadInitialSaveRef.current && sanctuaryRef.current.onboardingCompleted !== false) {
+        await pushCloudSave(sanctuaryRef.current);
+      }
       const [mkt, friends, lb, trades] = await Promise.all([
         fetchMarketplaceListings(),
         fetchCommunitySanctuaries(),
         fetchLeaderboard(),
-        fetchDirectTrades(sanctuaryRef.current.syncCode),
+        wasReset ? Promise.resolve([]) : fetchDirectTrades(sanctuaryRef.current.syncCode),
       ]);
-      if (mkt.length) setListings(mkt);
+      setListings(mkt);
       setCommunitySanctuaries(friends);
-      if (lb.length) setLeaderboard(lb);
-      if (trades.length) setDirectTrades(trades);
+      setLeaderboard(lb);
+      setDirectTrades(trades);
     })();
 
     return () => {
       client.dispose();
       socketRef.current = null;
     };
-  }, [pushToast, pushChatNotification]);
+  }, [pushToast, pushChatNotification, handleServerWorldReset]);
 
   // --- Animal Rename & Bio Editor ---
   const handleUpdateAnimalDetails = (enclosureId: string, name: string, bio: string) => {
@@ -2341,6 +2438,7 @@ export default function App() {
       },
     );
     setShowNewFarmModal(false);
+    setServerResetNotice(false);
     setShowDemolishConfirm(false);
     setEditMode(false);
     setMovingItem(null);
@@ -2359,6 +2457,7 @@ export default function App() {
       placedTotal: fresh.enclosures.length + fresh.crops.length + fresh.decorations.length,
     };
     setHasExistingSave(true);
+    hadInitialSaveRef.current = true;
     setPendingIdleCoins(0);
     saveLocalSanctuary(fresh);
     setScreen('playing');
@@ -2378,19 +2477,7 @@ export default function App() {
     );
   };
 
-  // --- Guided Tutorial Handlers & Auto-Advance ---
-  const tutorialBaselineRef = useRef<{
-    feeds: number;
-    grooms: number;
-    harvests: number;
-    placedTotal: number;
-  }>({
-    feeds: sanctuary.stats.totalFeeds,
-    grooms: sanctuary.stats.totalGrooms,
-    harvests: sanctuary.stats.totalHarvests,
-    placedTotal:
-      sanctuary.enclosures.length + sanctuary.crops.length + sanctuary.decorations.length,
-  });
+  // --- Guided Tutorial Auto-Advance ---
 
   useEffect(() => {
     const step = sanctuary.tutorialStep;
@@ -3061,6 +3148,7 @@ export default function App() {
       {showNewFarmModal && (
         <NewFarmModal
           canCancel={hasExistingSave}
+          resetNotice={serverResetNotice}
           onCancel={() => {
             soundEngine.playClick();
             setShowNewFarmModal(false);

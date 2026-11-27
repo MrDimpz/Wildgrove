@@ -534,6 +534,7 @@ function loadDatabase() {
         }
         if (!Array.isArray(parsed.directTrades)) parsed.directTrades = [];
         if (!Array.isArray(parsed.adminAuditLog)) parsed.adminAuditLog = [];
+        if (typeof parsed.worldResetAt !== 'number') parsed.worldResetAt = 0;
         purgeGeneratedGroves(parsed);
         return parsed;
       }
@@ -548,6 +549,7 @@ function loadDatabase() {
     directTrades: [],
     adminAuth: null,
     adminAuditLog: [],
+    worldResetAt: 0,
   };
 }
 
@@ -676,14 +678,19 @@ export async function startServer() {
   });
 
   if (!Array.isArray(db.adminAuditLog)) db.adminAuditLog = [];
+  if (typeof db.worldResetAt !== 'number') db.worldResetAt = 0;
   if (mysqlStore) {
     try {
       const savedLog = await mysqlStore.getAdminConfig('audit_log');
       if (Array.isArray(savedLog)) {
         db.adminAuditLog = savedLog.slice(0, 60);
       }
+      const savedResetAt = await mysqlStore.getAdminConfig('world_reset_at');
+      if (typeof savedResetAt === 'number' && Number.isFinite(savedResetAt)) {
+        db.worldResetAt = savedResetAt;
+      }
     } catch {
-      // Ignore optional audit load error
+      // Ignore optional config load error
     }
   }
 
@@ -784,6 +791,7 @@ export async function startServer() {
         chat: db.chat.slice(-50),
         marketplace: db.marketplace,
         leaderboard: buildLeaderboard(),
+        worldResetAt: Number(db.worldResetAt || 0),
       }),
     );
 
@@ -844,6 +852,7 @@ export async function startServer() {
       storage: mysqlStore ? 'mysql' : 'file',
       online: wss.clients.size,
       sanctuaries: Object.keys(db.sanctuaries).length,
+      worldResetAt: Number(db.worldResetAt || 0),
     });
   });
 
@@ -1518,11 +1527,17 @@ export async function startServer() {
     }
 
     const summary = [];
+    let resetAt = 0;
     if (resetSanctuaries) {
       const n = Object.keys(db.sanctuaries || {}).length;
       db.sanctuaries = buildSeedSanctuaries();
-      if (mysqlStore) await mysqlStore.clearSanctuaries();
-      summary.push(`${n} sanctuaries cleared`);
+      resetAt = Date.now();
+      db.worldResetAt = resetAt;
+      if (mysqlStore) {
+        await mysqlStore.clearSanctuaries();
+        await mysqlStore.saveAdminConfig('world_reset_at', resetAt);
+      }
+      summary.push(`${n} sanctuaries cleared & fresh onboarding triggered for all players`);
     }
     if (resetMarketplace) {
       db.marketplace = reseedMarketplace ? buildSeedMarketplace() : [];
@@ -1556,6 +1571,9 @@ export async function startServer() {
       `Server reset executed: ${summary.join(', ') || 'no scopes selected'}`,
     );
 
+    if (resetSanctuaries && resetAt > 0) {
+      broadcast({ type: 'server:reset', resetAt, resetSanctuaries: true });
+    }
     broadcast({ type: 'leaderboard:updated', leaderboard: buildLeaderboard() });
     broadcast({ type: 'marketplace:updated', listings: db.marketplace });
     broadcast({ type: 'chat:sync', messages: db.chat.slice(-50) });
@@ -1563,6 +1581,7 @@ export async function startServer() {
     return res.json({
       ok: true,
       summary,
+      worldResetAt: Number(db.worldResetAt || 0),
     });
   });
 

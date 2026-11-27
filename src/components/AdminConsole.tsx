@@ -1446,7 +1446,7 @@ export function AdminConsole({ onReturnToGame }: { onReturnToGame: () => void })
                     <h2 className="text-sm font-bold">Server Reset</h2>
                   </div>
                   <p className="text-xs text-slate-600 leading-relaxed">
-                    Permanently wipe selected data scopes across memory and persistent storage (MySQL or JSON file). Your admin credentials will be preserved so you remain signed in.
+                    Permanently wipe selected data scopes across memory and persistent storage (MySQL or JSON file). When sanctuaries are reset, every online and returning player is reset to a fresh starting sanctuary with the new player setup popup and guided tutorial. Your admin credentials are preserved.
                   </p>
                 </div>
 
@@ -1460,7 +1460,7 @@ export function AdminConsole({ onReturnToGame }: { onReturnToGame: () => void })
                       }
                       className="rounded border-slate-300 text-red-600 focus:ring-red-600"
                     />
-                    <span>Delete all player sanctuaries ({sanctuaries.length})</span>
+                    <span>Reset all player sanctuaries ({sanctuaries.length}) & trigger fresh onboarding</span>
                   </label>
                   <label className="flex items-center gap-2.5 cursor-pointer">
                     <input

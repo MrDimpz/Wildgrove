@@ -43,7 +43,7 @@ const DOCK_ITEMS: Array<{
   { id: 'market', label: 'Market', icon: Store },
   { id: 'friends', label: 'Friends', icon: Users },
   { id: 'leaderboard', label: 'Ranks', icon: Trophy },
-  { id: 'events', label: 'Events', icon: Gift },
+  { id: 'events', label: 'Tasks', icon: Gift },
   { id: 'chat', label: 'Chat', icon: MessageCircle },
 ];
 

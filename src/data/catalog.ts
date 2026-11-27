@@ -56,67 +56,178 @@ export function todayDateString(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-export function generateDailyQuests(dateStr = todayDateString()): DailyQuestState {
-  // Deterministic 3-quest rotation seeded by date so all devices agree
-  let hash = 0;
-  for (let i = 0; i < dateStr.length; i++) {
-    hash = (hash * 31 + dateStr.charCodeAt(i)) % 997;
+export interface DailyTaskTierSpec {
+  target: number;
+  rewardCoins: number;
+  rewardGems: number;
+  rewardLanterns: number;
+}
+
+export interface DailyTaskTrackDef {
+  type: DailyQuestItem['type'];
+  labelForTarget: (target: number) => string;
+  tiers: DailyTaskTierSpec[];
+}
+
+export const DAILY_TASK_TRACKS: DailyTaskTrackDef[] = [
+  {
+    type: 'harvest',
+    labelForTarget: (t) => `Harvest ${t} Crop ${t === 1 ? 'Item' : 'Items'}`,
+    tiers: [
+      { target: 2, rewardCoins: 90, rewardGems: 2, rewardLanterns: 15 },
+      { target: 5, rewardCoins: 150, rewardGems: 4, rewardLanterns: 25 },
+      { target: 10, rewardCoins: 240, rewardGems: 6, rewardLanterns: 35 },
+      { target: 18, rewardCoins: 360, rewardGems: 9, rewardLanterns: 50 },
+      { target: 30, rewardCoins: 540, rewardGems: 14, rewardLanterns: 75 },
+    ],
+  },
+  {
+    type: 'care',
+    labelForTarget: (t) => `Complete ${t} Feed or Groom ${t === 1 ? 'Session' : 'Sessions'}`,
+    tiers: [
+      { target: 2, rewardCoins: 100, rewardGems: 2, rewardLanterns: 15 },
+      { target: 4, rewardCoins: 170, rewardGems: 4, rewardLanterns: 25 },
+      { target: 8, rewardCoins: 270, rewardGems: 7, rewardLanterns: 40 },
+      { target: 14, rewardCoins: 410, rewardGems: 10, rewardLanterns: 60 },
+      { target: 22, rewardCoins: 600, rewardGems: 15, rewardLanterns: 80 },
+    ],
+  },
+  {
+    type: 'build',
+    labelForTarget: (t) => `Build or Plant ${t} ${t === 1 ? 'Item' : 'Items'}`,
+    tiers: [
+      { target: 1, rewardCoins: 85, rewardGems: 2, rewardLanterns: 15 },
+      { target: 3, rewardCoins: 165, rewardGems: 5, rewardLanterns: 30 },
+      { target: 6, rewardCoins: 290, rewardGems: 8, rewardLanterns: 45 },
+      { target: 10, rewardCoins: 450, rewardGems: 12, rewardLanterns: 65 },
+      { target: 15, rewardCoins: 650, rewardGems: 16, rewardLanterns: 90 },
+    ],
+  },
+  {
+    type: 'feed_high',
+    labelForTarget: (t) => `Score 100+ in Treat Toss (${t}×)`,
+    tiers: [
+      { target: 1, rewardCoins: 120, rewardGems: 3, rewardLanterns: 20 },
+      { target: 3, rewardCoins: 230, rewardGems: 6, rewardLanterns: 35 },
+      { target: 6, rewardCoins: 380, rewardGems: 10, rewardLanterns: 55 },
+      { target: 10, rewardCoins: 560, rewardGems: 14, rewardLanterns: 80 },
+    ],
+  },
+  {
+    type: 'craft',
+    labelForTarget: (t) => `Craft ${t} Kitchen ${t === 1 ? 'Recipe' : 'Recipes'}`,
+    tiers: [
+      { target: 1, rewardCoins: 110, rewardGems: 3, rewardLanterns: 20 },
+      { target: 3, rewardCoins: 215, rewardGems: 6, rewardLanterns: 35 },
+      { target: 6, rewardCoins: 360, rewardGems: 9, rewardLanterns: 50 },
+      { target: 10, rewardCoins: 520, rewardGems: 13, rewardLanterns: 75 },
+    ],
+  },
+  {
+    type: 'visit',
+    labelForTarget: (t) => `Leave ${t} Friend Care ${t === 1 ? 'Gift' : 'Gifts'}`,
+    tiers: [
+      { target: 1, rewardCoins: 125, rewardGems: 4, rewardLanterns: 20 },
+      { target: 3, rewardCoins: 250, rewardGems: 7, rewardLanterns: 35 },
+      { target: 5, rewardCoins: 390, rewardGems: 11, rewardLanterns: 55 },
+      { target: 8, rewardCoins: 580, rewardGems: 15, rewardLanterns: 80 },
+    ],
+  },
+];
+
+export function getDailyTaskTrack(type: DailyQuestItem['type']): DailyTaskTrackDef | undefined {
+  return DAILY_TASK_TRACKS.find((t) => t.type === type);
+}
+
+export function getNextStageTarget(quest: DailyQuestItem): number | null {
+  const track = getDailyTaskTrack(quest.type);
+  if (!track || quest.stage >= track.tiers.length) return null;
+  return track.tiers[quest.stage]?.target ?? null;
+}
+
+export function promoteDailyQuestStage(quest: DailyQuestItem): DailyQuestItem {
+  const track = getDailyTaskTrack(quest.type);
+  if (!track || quest.stage >= track.tiers.length) {
+    return { ...quest, claimed: true };
   }
-  const pool: Array<Omit<DailyQuestItem, 'progress' | 'claimed'>> = [
-    {
-      id: `q-harvest-${dateStr}`,
-      type: 'harvest',
-      title: 'Harvest 3 Treat Crops',
-      target: 3,
-      rewardCoins: 140,
-      rewardGems: 4,
-      rewardLanterns: 20,
-    },
-    {
-      id: `q-care-${dateStr}`,
-      type: 'care',
-      title: 'Complete 2 Feed or Groom Sessions',
-      target: 2,
-      rewardCoins: 160,
-      rewardGems: 5,
-      rewardLanterns: 25,
-    },
-    {
-      id: `q-feedhigh-${dateStr}`,
-      type: 'feed_high',
-      title: 'Score 110+ in Treat Toss (1 time)',
-      target: 1,
-      rewardCoins: 180,
-      rewardGems: 6,
-      rewardLanterns: 30,
-    },
-    {
-      id: `q-visit-${dateStr}`,
-      type: 'visit',
-      title: 'Visit a Friend & Leave a Care Gift',
-      target: 1,
-      rewardCoins: 150,
-      rewardGems: 5,
-      rewardLanterns: 25,
-    },
-    {
-      id: `q-craft-${dateStr}`,
-      type: 'craft',
-      title: 'Craft 1 Gourmet Treat or Booster',
-      target: 1,
-      rewardCoins: 170,
-      rewardGems: 5,
-      rewardLanterns: 25,
-    },
-  ];
-  // Always include harvest & care, plus 1 rotating bonus quest
-  const thirdIdx = 2 + (hash % 3);
-  const picked = [pool[0], pool[1], pool[thirdIdx]].map((q) => ({
-    ...q,
-    progress: 0,
+  const nextStage = quest.stage + 1;
+  const spec = track.tiers[nextStage - 1];
+  return {
+    ...quest,
+    stage: nextStage,
+    maxStages: track.tiers.length,
+    title: track.labelForTarget(spec.target),
+    target: spec.target,
+    rewardCoins: spec.rewardCoins,
+    rewardGems: spec.rewardGems,
+    rewardLanterns: spec.rewardLanterns,
     claimed: false,
-  }));
-  return { date: dateStr, quests: picked };
+  };
+}
+
+export function generateDailyQuests(dateStr = todayDateString()): DailyQuestState {
+  const quests: DailyQuestItem[] = DAILY_TASK_TRACKS.map((track) => {
+    const first = track.tiers[0];
+    return {
+      id: `q-${track.type}-${dateStr}`,
+      type: track.type,
+      title: track.labelForTarget(first.target),
+      stage: 1,
+      maxStages: track.tiers.length,
+      target: first.target,
+      progress: 0,
+      rewardCoins: first.rewardCoins,
+      rewardGems: first.rewardGems,
+      rewardLanterns: first.rewardLanterns,
+      claimed: false,
+    };
+  });
+  return { date: dateStr, quests };
+}
+
+export function normalizeDailyQuests(
+  existing: DailyQuestState | undefined,
+  dateStr = todayDateString(),
+): DailyQuestState {
+  const fresh = generateDailyQuests(dateStr);
+  if (!existing || existing.date !== dateStr || !Array.isArray(existing.quests)) {
+    return fresh;
+  }
+  const byType = new Map<DailyQuestItem['type'], DailyQuestItem>();
+  for (const item of existing.quests) {
+    if (item && typeof item.type === 'string') {
+      byType.set(item.type, item);
+    }
+  }
+  const merged = fresh.quests.map((baseItem) => {
+    const saved = byType.get(baseItem.type);
+    if (!saved) return baseItem;
+    const track = getDailyTaskTrack(baseItem.type)!;
+    const maxStages = track.tiers.length;
+    const savedStage =
+      typeof saved.stage === 'number' && saved.stage >= 1
+        ? Math.min(maxStages, Math.round(saved.stage))
+        : saved.claimed
+          ? Math.min(maxStages, 2)
+          : 1;
+    const spec = track.tiers[savedStage - 1];
+    const progress = Math.max(0, Math.round(saved.progress || 0));
+    const claimed = Boolean(saved.claimed) && savedStage >= maxStages;
+    return {
+      id: saved.id || baseItem.id,
+      type: baseItem.type,
+      title: track.labelForTarget(spec.target),
+      stage: savedStage,
+      maxStages,
+      target: spec.target,
+      progress,
+      rewardCoins: spec.rewardCoins,
+      rewardGems: spec.rewardGems,
+      rewardLanterns: spec.rewardLanterns,
+      claimed,
+    };
+  });
+  return { date: dateStr, quests: merged };
 }
 
 export const SPECIES_SYNERGY_DECOR: Record<SpeciesId, DecorTypeId[]> = {
@@ -307,10 +418,7 @@ export const GENERATED_GROVE_CODES = new Set([
 export function normalizeSanctuaryState(state: SanctuaryState): SanctuaryState {
   const validGridSize = state.gridSize === 24 ? 24 : state.gridSize === 18 ? 18 : DEFAULT_GRID_SIZE;
   const today = todayDateString();
-  const existingQuests =
-    state.dailyQuests && state.dailyQuests.date === today && Array.isArray(state.dailyQuests.quests)
-      ? state.dailyQuests
-      : generateDailyQuests(today);
+  const existingQuests = normalizeDailyQuests(state.dailyQuests, today);
 
   const inventory: Record<ResourceId, number> = {
     berry_treat: 0,
@@ -378,6 +486,10 @@ export function normalizeSanctuaryState(state: SanctuaryState): SanctuaryState {
       typeof state.lastIdleCollectedAt === 'number' && state.lastIdleCollectedAt > 0
         ? state.lastIdleCollectedAt
         : state.updatedAt || Date.now(),
+    onboardingCompleted:
+      typeof state.onboardingCompleted === 'boolean' ? state.onboardingCompleted : true,
+    tutorialStep: typeof state.tutorialStep === 'number' ? state.tutorialStep : -1,
+    tutorialSkipped: Boolean(state.tutorialSkipped),
   };
 }
 
@@ -1337,172 +1449,143 @@ export function generateSyncCode(): string {
   return `GROVE-${suffix}`;
 }
 
+const STARTER_SPECIES_NAMES: Record<SpeciesId, string[]> = {
+  raccoon: ['Pippin', 'Maple', 'Acorn'],
+  gorilla: ['Bramble', 'Taro', 'Cedar'],
+  butterfly: ['Aurelia', 'Marigold', 'Zephyr'],
+  wolf: ['Koda', 'Freya', 'Aspen'],
+  red_panda: ['Rusty', 'Ginger', 'Cinnamon'],
+  golden_fox: ['Sol', 'Ember', 'Clover'],
+  snow_leopard: ['Nova', 'Frost', 'Willow'],
+  river_otter: ['Splash', 'Pebble', 'Ripple'],
+  tree_frog: ['Sprout', 'Clover', 'Puddle'],
+  chameleon: ['Pascal', 'Prism', 'Ziggy'],
+  giant_tortoise: ['Shelby', 'Barnaby', 'Moss'],
+  bearded_dragon: ['Saffron', 'Sunny', 'Ember'],
+};
+
+const TREAT_TO_CROP: Partial<Record<ResourceId, CropTypeId>> = {
+  berry_treat: 'berry',
+  mango_treat: 'mango',
+  nectar_treat: 'lavender',
+  herb_treat: 'herb',
+  bamboo_shoot_treat: 'bamboo_shoot',
+  fox_berry_treat: 'fox_berry',
+  ice_fish_treat: 'ice_fish',
+  river_reed_treat: 'river_reed',
+};
+
+export interface StarterSanctuaryOptions {
+  avatarSpecies?: SpeciesId;
+  sanctuaryMotto?: string;
+  preferredTheme?: 'meadow' | 'autumn' | 'clover' | 'alpine';
+  onboardingCompleted?: boolean;
+  tutorialStep?: number;
+  tutorialSkipped?: boolean;
+}
+
 export function createStarterSanctuary(
   keeperName = 'Meadow Keeper',
   sanctuaryName = 'Sunlit Wildgrove',
   syncCode = generateSyncCode(),
+  options: StarterSanctuaryOptions = {},
 ): SanctuaryState {
   const now = Date.now();
+  const allSpecies = Object.keys(SPECIES_CATALOG) as SpeciesId[];
+  const starterSpecies = allSpecies[Math.floor(Math.random() * allSpecies.length)];
+  const starterDef = SPECIES_CATALOG[starterSpecies];
+  const namePool = STARTER_SPECIES_NAMES[starterSpecies] || ['Pippin'];
+  const starterAnimalName = namePool[Math.floor(Math.random() * namePool.length)];
+  const starterCropType: CropTypeId = TREAT_TO_CROP[starterDef.favoriteTreat] || 'berry';
+
+  // Pick 2 cozy starter decorations: 1 favorite synergy decor + 1 complementary lantern/willow
+  const synergyPool = (SPECIES_SYNERGY_DECOR[starterSpecies] || ['willow', 'lantern_post']).filter(
+    (d) => getDecorFootprint(d) === 1,
+  );
+  const firstDecor: DecorTypeId =
+    synergyPool[Math.floor(Math.random() * synergyPool.length)] || 'willow';
+  const secondDecor: DecorTypeId = firstDecor === 'lantern_post' ? 'willow' : 'lantern_post';
+
+  const baseInventory: Record<ResourceId, number> = {
+    berry_treat: 2,
+    mango_treat: 0,
+    nectar_treat: 0,
+    herb_treat: 0,
+    bamboo_shoot_treat: 0,
+    fox_berry_treat: 0,
+    ice_fish_treat: 0,
+    river_reed_treat: 0,
+    lucky_acorn: 1,
+    silverback_amber: 0,
+    wing_dust: 0,
+    moonstone_pelt: 0,
+    lantern_charm: 0,
+    fire_tail_charm: 0,
+    sun_crystal: 0,
+    frost_pelt: 0,
+    river_pearl: 0,
+    jade_lily_dew: 0,
+    prism_scale: 0,
+    ancient_shell_amber: 0,
+    sunstone_scale: 0,
+    gourmet_treat: 1,
+    sunbeam_fertilizer: 1,
+    meadow_sprinkler: 1,
+  };
+  baseInventory[starterDef.favoriteTreat] = (baseInventory[starterDef.favoriteTreat] || 0) + 5;
+
   const base: SanctuaryState = {
     syncCode,
     keeperName,
     sanctuaryName,
-    avatarSpecies: 'raccoon',
+    sanctuaryMotto: options.sanctuaryMotto || '',
+    preferredTheme: options.preferredTheme || 'meadow',
+    avatarSpecies: options.avatarSpecies || starterSpecies,
+    onboardingCompleted: options.onboardingCompleted ?? false,
+    tutorialStep: options.tutorialSkipped ? -1 : (options.tutorialStep ?? 0),
+    tutorialSkipped: Boolean(options.tutorialSkipped),
     level: 1,
-    xp: 25,
-    coins: 750,
-    gems: 35,
+    xp: 0,
+    coins: 650,
+    gems: 30,
     prestige: 0,
     gridSize: DEFAULT_GRID_SIZE,
     enclosures: [
       {
-        id: 'enc-starter-raccoon',
-        species: 'raccoon',
-        name: 'Pippin',
+        id: `enc-starter-${starterSpecies}-${now}`,
+        species: starterSpecies,
+        name: starterAnimalName,
         variant: 'classic',
-        gridX: 2,
-        gridZ: 2,
-        happiness: 78,
-        hunger: 68,
+        gridX: 5,
+        gridZ: 4,
+        happiness: 74,
+        hunger: 62,
         grooming: 62,
-        bondLevel: 2,
-        lastFedAt: now - 120000,
-        lastGroomedAt: now - 180000,
-        visitorHearts: 2,
-        adoptedAt: now - 720000,
-        timesFed: 2,
-        timesGroomed: 1,
-        bondHistory: [
-          { level: 1, reachedAt: now - 720000, source: 'adopted' },
-          { level: 2, reachedAt: now - 120000, source: 'feed' },
-        ],
-      },
-      {
-        id: 'enc-starter-butterfly',
-        species: 'butterfly',
-        name: 'Aurelia',
-        variant: 'classic',
-        gridX: 7,
-        gridZ: 2,
-        happiness: 84,
-        hunger: 74,
-        grooming: 70,
-        bondLevel: 2,
-        lastFedAt: now - 90000,
-        lastGroomedAt: now - 140000,
-        visitorHearts: 3,
-        adoptedAt: now - 660000,
-        timesFed: 2,
-        timesGroomed: 2,
-        bondHistory: [
-          { level: 1, reachedAt: now - 660000, source: 'adopted' },
-          { level: 2, reachedAt: now - 140000, source: 'groom' },
-        ],
-      },
-      {
-        id: 'enc-starter-redpanda',
-        species: 'red_panda',
-        name: 'Rusty',
-        variant: 'classic',
-        gridX: 2,
-        gridZ: 7,
-        happiness: 82,
-        hunger: 72,
-        grooming: 68,
-        bondLevel: 2,
-        lastFedAt: now - 100000,
-        lastGroomedAt: now - 150000,
-        visitorHearts: 2,
-        adoptedAt: now - 600000,
-        timesFed: 1,
-        timesGroomed: 2,
-        bondHistory: [
-          { level: 1, reachedAt: now - 600000, source: 'adopted' },
-          { level: 2, reachedAt: now - 100000, source: 'feed' },
-        ],
-      },
-      {
-        id: 'enc-starter-wolf',
-        species: 'wolf',
-        name: 'Koda',
-        variant: 'classic',
-        gridX: 7,
-        gridZ: 7,
-        happiness: 80,
-        hunger: 70,
-        grooming: 60,
         bondLevel: 1,
-        lastFedAt: now - 110000,
-        lastGroomedAt: now - 170000,
-        visitorHearts: 2,
-        adoptedAt: now - 480000,
-        timesFed: 1,
-        timesGroomed: 1,
-        bondHistory: [{ level: 1, reachedAt: now - 480000, source: 'adopted' }],
+        lastFedAt: now - 180000,
+        lastGroomedAt: now - 240000,
+        visitorHearts: 1,
+        adoptedAt: now,
+        timesFed: 0,
+        timesGroomed: 0,
+        bondHistory: [{ level: 1, reachedAt: now, source: 'adopted' }],
       },
     ],
     crops: [
       {
-        id: 'crop-starter-1',
-        cropType: 'berry',
+        id: `crop-starter-${now}`,
+        cropType: starterCropType,
         gridX: 5,
-        gridZ: 4,
-        plantedAt: now - 650000, // Ready to harvest right away!
-        growDurationMs: CROP_CATALOG.berry.growDurationMs,
-      },
-      {
-        id: 'crop-starter-2',
-        cropType: 'bamboo_shoot',
-        gridX: 6,
-        gridZ: 4,
-        plantedAt: now - 650000, // Ready to harvest right away!
-        growDurationMs: CROP_CATALOG.bamboo_shoot.growDurationMs,
-      },
-      {
-        id: 'crop-starter-3',
-        cropType: 'mango',
-        gridX: 5,
-        gridZ: 5,
-        plantedAt: now - 100000,
-        growDurationMs: CROP_CATALOG.mango.growDurationMs,
+        gridZ: 6,
+        plantedAt: now - 650000, // Ready to harvest right away for the tutorial!
+        growDurationMs: CROP_CATALOG[starterCropType].growDurationMs,
       },
     ],
     decorations: [
-      { id: 'dec-s1', decorType: 'koi_pond', gridX: 5, gridZ: 2, rotation: 0 },
-      { id: 'dec-s2', decorType: 'autumn_maple', gridX: 1, gridZ: 5, rotation: 1 },
-      { id: 'dec-s3', decorType: 'lantern_post', gridX: 4, gridZ: 4, rotation: 0 },
-      { id: 'dec-s4', decorType: 'lantern_post', gridX: 7, gridZ: 5, rotation: 2 },
-      { id: 'dec-s5', decorType: 'flower_arch', gridX: 5, gridZ: 7, rotation: 0 },
-      { id: 'dec-s6', decorType: 'willow', gridX: 10, gridZ: 5, rotation: 0 },
-      { id: 'dec-s7', decorType: 'cobble_path', gridX: 5, gridZ: 6, rotation: 0 },
-      { id: 'dec-s8', decorType: 'cobble_path', gridX: 6, gridZ: 6, rotation: 0 },
+      { id: `dec-starter-1-${now}`, decorType: firstDecor, gridX: 3, gridZ: 5, rotation: 0 },
+      { id: `dec-starter-2-${now}`, decorType: secondDecor, gridX: 7, gridZ: 5, rotation: 1 },
     ],
-    inventory: {
-      berry_treat: 6,
-      mango_treat: 4,
-      nectar_treat: 5,
-      herb_treat: 4,
-      bamboo_shoot_treat: 6,
-      fox_berry_treat: 4,
-      ice_fish_treat: 4,
-      river_reed_treat: 4,
-      lucky_acorn: 3,
-      silverback_amber: 1,
-      wing_dust: 1,
-      moonstone_pelt: 1,
-      lantern_charm: 2,
-      fire_tail_charm: 2,
-      sun_crystal: 1,
-      frost_pelt: 1,
-      river_pearl: 2,
-      jade_lily_dew: 0,
-      prism_scale: 0,
-      ancient_shell_amber: 0,
-      sunstone_scale: 0,
-      gourmet_treat: 1,
-      sunbeam_fertilizer: 2,
-      meadow_sprinkler: 1,
-    },
+    inventory: baseInventory,
     storageCrate: [],
     dailyReward: {
       streak: 0,
@@ -1512,7 +1595,7 @@ export function createStarterSanctuary(
     dailyForaging: { date: todayDateString(), foundIds: [] },
     seasonalEvent: {
       eventId: SEASONAL_EVENT_INFO.id,
-      lanternPoints: 35,
+      lanternPoints: 0,
       claimedMilestones: [],
     },
     unlockedAchievements: [],

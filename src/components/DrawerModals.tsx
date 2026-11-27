@@ -67,6 +67,7 @@ import {
   SEASONAL_EVENT_INFO,
   SPECIES_CATALOG,
   formatMinSec,
+  getNextStageTarget,
 } from '../data/catalog';
 import { SpeciesIcon } from './SpeciesIcon';
 import { ManualContent } from './ManualContent';
@@ -156,6 +157,7 @@ interface DrawerModalsProps {
   snapshotUrl: string | null;
   onCaptureSnapshot: () => void;
   onShareMilestoneToChat: (text: string) => void;
+  onReplayTutorial?: () => void;
 }
 
 const TERRAIN_THEMES: Array<{ id: TerrainThemeId; label: string; swatch: string; note: string }> = [
@@ -220,6 +222,7 @@ export function DrawerModals({
   snapshotUrl,
   onCaptureSnapshot,
   onShareMilestoneToChat,
+  onReplayTutorial,
 }: DrawerModalsProps) {
   const [buildTab, setBuildTab] = useState<'enclosures' | 'decor' | 'nursery' | 'storage' | 'aesthetics'>(
     'enclosures',
@@ -318,7 +321,7 @@ export function DrawerModals({
     market: 'Sanctuary Trading Post',
     friends: 'Friends, Visits & Guestbook',
     leaderboard: 'Global Keeper Rankings',
-    events: 'Daily Quests, Streak & Festival',
+    events: 'Daily Tasks, Streak & Festival',
     chat: 'Community Sanctuary Chat',
     sync: 'Cross-Platform Cloud Sync',
     share: 'Share Sanctuary Milestone',
@@ -1768,64 +1771,103 @@ export function DrawerModals({
             </div>
           )}
 
-          {/* ==================== DAILY QUESTS, STREAK & SEASONAL EVENT ==================== */}
+          {/* ==================== DAILY TASKS, STREAK & SEASONAL EVENT ==================== */}
           {activeDrawer === 'events' && (
             <div className="space-y-6">
-              {/* Daily Keeper Quests */}
-              <div className="p-4 rounded-2xl bg-[#E9F2EC] border border-[#2F6E49]/25 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="font-display font-bold text-base text-[#233026]">
-                      Daily Keeper Quests
-                    </h3>
-                    <p className="text-xs text-[#4C5E50]">
-                      Fresh rotating bounties every day for bonus Coins, Gems &amp; Lantern Points
-                    </p>
-                  </div>
-                  <span className="text-[11px] font-mono-num font-semibold text-[#2F6E49]">
-                    {dailyQuests.filter((q) => q.claimed).length}/{dailyQuests.length} Done
-                  </span>
-                </div>
-
-                <div className="space-y-2">
-                  {dailyQuests.map((q) => {
-                    const pct = Math.min(100, Math.round((q.progress / Math.max(1, q.target)) * 100));
-                    const ready = q.progress >= q.target && !q.claimed;
-                    return (
-                      <div
-                        key={q.id}
-                        className="p-3 rounded-xl bg-[#FAF6EE] border border-[#263129]/10 flex flex-wrap items-center justify-between gap-3"
-                      >
-                        <div className="min-w-0 flex-1 space-y-1">
-                          <div className="text-xs sm:text-sm font-semibold text-[#233026]">
-                            {q.title}
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <div className="flex-1 h-1.5 bg-[#E3DAC8] rounded-full overflow-hidden max-w-[180px]">
-                              <div
-                                className="h-full bg-[#2F6E49] transition-all duration-300"
-                                style={{ width: `${pct}%` }}
-                              />
-                            </div>
-                            <span className="text-[11px] font-mono-num text-[#5A6B5C]">
-                              {Math.min(q.progress, q.target)}/{q.target} · +{q.rewardCoins}c +{q.rewardGems}g
-                            </span>
-                          </div>
-                        </div>
-
-                        <button
-                          type="button"
-                          disabled={!ready}
-                          onClick={() => onClaimQuest(q.id)}
-                          className="px-3 py-1.5 rounded-lg bg-[#2F6E49] hover:bg-[#25593B] text-white text-xs font-semibold cursor-pointer disabled:opacity-45 whitespace-nowrap"
-                        >
-                          {q.claimed ? 'Claimed' : ready ? 'Claim Reward' : 'In Progress'}
-                        </button>
+              {/* Incremental Daily Tasks */}
+              {(() => {
+                const totalStages = dailyQuests.reduce((acc, q) => acc + (q.maxStages || 1), 0);
+                const claimedStages = dailyQuests.reduce(
+                  (acc, q) => acc + (q.claimed ? q.maxStages || 1 : Math.max(0, (q.stage || 1) - 1)),
+                  0,
+                );
+                return (
+                  <div className="p-4 rounded-2xl bg-[#E9F2EC] border border-[#2F6E49]/25 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <h3 className="font-display font-bold text-base text-[#233026]">
+                          Daily Tasks
+                        </h3>
+                        <p className="text-xs text-[#4C5E50]">
+                          Claim a stage to unlock the next incremental target with bigger Coin &amp; Gem payouts. Progress carries over!
+                        </p>
                       </div>
-                    );
-                  })}
-                </div>
-              </div>
+                      <span className="text-[11px] font-mono-num font-semibold text-[#2F6E49] whitespace-nowrap">
+                        {claimedStages}/{totalStages} Stages Claimed
+                      </span>
+                    </div>
+
+                    <div className="space-y-2.5">
+                      {dailyQuests.map((q) => {
+                        const stage = q.stage || 1;
+                        const maxStages = q.maxStages || 1;
+                        const pct = Math.min(
+                          100,
+                          Math.round((q.progress / Math.max(1, q.target)) * 100),
+                        );
+                        const ready = q.progress >= q.target && !q.claimed;
+                        const nextTarget = getNextStageTarget(q);
+
+                        return (
+                          <div
+                            key={q.id}
+                            className={`p-3 rounded-xl border flex flex-wrap items-center justify-between gap-3 transition-colors ${
+                              ready
+                                ? 'bg-white border-[#2F6E49]/45 shadow-xs'
+                                : 'bg-[#FAF6EE] border-[#263129]/10'
+                            }`}
+                          >
+                            <div className="min-w-0 flex-1 space-y-1.5">
+                              <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5">
+                                <span className="text-xs sm:text-sm font-semibold text-[#233026]">
+                                  {q.title}
+                                </span>
+                                <span className="text-[11px] font-mono-num text-[#5A6B5C] whitespace-nowrap">
+                                  Stage {stage}/{maxStages}
+                                  {nextTarget !== null && !q.claimed ? ` · Next: ${nextTarget}` : ''}
+                                </span>
+                              </div>
+
+                              <div className="flex flex-wrap items-center gap-2.5">
+                                <div className="flex-1 min-w-[110px] max-w-[200px] h-1.5 bg-[#E3DAC8] rounded-full overflow-hidden">
+                                  <div
+                                    className={`h-full transition-all duration-300 ${
+                                      ready ? 'bg-[#C46B33]' : 'bg-[#2F6E49]'
+                                    }`}
+                                    style={{ width: `${pct}%` }}
+                                  />
+                                </div>
+                                <span className="text-[11px] font-mono-num text-[#4B5B4E] whitespace-nowrap">
+                                  {q.progress}/{q.target} · +{q.rewardCoins}c · +{q.rewardGems}g · +{q.rewardLanterns} pts
+                                </span>
+                              </div>
+                            </div>
+
+                            <button
+                              type="button"
+                              disabled={!ready}
+                              onClick={() => onClaimQuest(q.id)}
+                              className={`px-3.5 py-2 rounded-xl text-xs font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer disabled:cursor-default ${
+                                ready
+                                  ? 'bg-[#2F6E49] hover:bg-[#25593B] text-white shadow-xs'
+                                  : q.claimed
+                                    ? 'bg-[#E6F1E9] text-[#2F6E49]'
+                                    : 'bg-[#EFE7D8] text-[#6B7A6E]'
+                              }`}
+                            >
+                              {q.claimed
+                                ? 'Maxed Today'
+                                : ready
+                                  ? `Claim Stage ${stage}`
+                                  : 'In Progress'}
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* 7-Day Daily Streak */}
               <div className="space-y-3">
@@ -2262,7 +2304,33 @@ export function DrawerModals({
           )}
 
           {/* ==================== KEEPER'S INSTRUCTION MANUAL ==================== */}
-          {activeDrawer === 'manual' && <ManualContent />}
+          {activeDrawer === 'manual' && (
+            <div className="space-y-4">
+              {onReplayTutorial && (
+                <div className="p-3.5 rounded-2xl bg-[#E9F2EC] border border-[#2F6E49]/25 flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <div className="text-xs sm:text-sm font-semibold text-[#233026]">
+                      Interactive Guided Tutorial
+                    </div>
+                    <div className="text-[11px] text-[#4C5E50]">
+                      Walk through animal care, feeding, crops, building, and daily tasks step by step.
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onReplayTutorial();
+                      onClose();
+                    }}
+                    className="px-3.5 py-2 rounded-xl bg-[#2F6E49] hover:bg-[#25593B] text-white text-xs font-semibold cursor-pointer whitespace-nowrap"
+                  >
+                    Replay Tutorial
+                  </button>
+                </div>
+              )}
+              <ManualContent />
+            </div>
+          )}
         </div>
       </div>
     </div>

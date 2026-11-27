@@ -1,13 +1,21 @@
 import { useEffect, useState } from 'react';
-import { CloudDownload, Play } from 'lucide-react';
+import { CloudDownload, Play, Plus } from 'lucide-react';
 
 interface TitleScreenProps {
+  hasExistingSave: boolean;
   existingSyncCode?: string;
-  onStart: (keeperName: string, sanctuaryName: string) => void;
+  onStart: () => void;
+  onStartNewFarm: () => void;
   onLoadSyncCode: (code: string) => Promise<boolean>;
 }
 
-export function TitleScreen({ existingSyncCode, onStart, onLoadSyncCode }: TitleScreenProps) {
+export function TitleScreen({
+  hasExistingSave,
+  existingSyncCode,
+  onStart,
+  onStartNewFarm,
+  onLoadSyncCode,
+}: TitleScreenProps) {
   const [showRestore, setShowRestore] = useState(false);
   const [restoreCode, setRestoreCode] = useState('');
   const [restoreError, setRestoreError] = useState('');
@@ -18,12 +26,16 @@ export function TitleScreen({ existingSyncCode, onStart, onLoadSyncCode }: Title
       if (showRestore) return;
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
-        onStart('Meadow Keeper', 'Sunlit Wildgrove');
+        if (hasExistingSave) {
+          onStart();
+        } else {
+          onStartNewFarm();
+        }
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [showRestore, onStart]);
+  }, [showRestore, hasExistingSave, onStart, onStartNewFarm]);
 
   const handleRestore = async () => {
     if (!restoreCode.trim()) return;
@@ -88,28 +100,43 @@ export function TitleScreen({ existingSyncCode, onStart, onLoadSyncCode }: Title
           </svg>
 
           <p className="text-sm text-[#4A594D] leading-relaxed max-w-md mx-auto mb-6">
-            Shelter Raccoons, Gorillas, Butterflies, and Wolves in custom 3D habitats. Harvest treats, play cozy care mini-games, trade rare finds, and visit friends.
+            Shelter Raccoons, Gorillas, Butterflies, and Wolves in custom 3D habitats. Harvest treats, play cozy care mini-games, complete daily tasks, and visit friends.
           </p>
 
           {!showRestore ? (
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-              <button
-                type="button"
-                onClick={() => onStart('Meadow Keeper', 'Sunlit Wildgrove')}
-                className="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 px-7 py-3.5 rounded-xl bg-[#2F6E49] hover:bg-[#25593B] text-[#FAF6EE] font-semibold text-base shadow-sm transition-transform active:scale-[0.98] cursor-pointer whitespace-nowrap"
-              >
-                <Play className="w-4 h-4 fill-current" />
-                {existingSyncCode ? 'Continue Sanctuary' : 'Enter Sanctuary'}
-              </button>
+            <div className="space-y-3">
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+                <button
+                  type="button"
+                  onClick={hasExistingSave ? onStart : onStartNewFarm}
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 px-7 py-3.5 rounded-xl bg-[#2F6E49] hover:bg-[#25593B] text-[#FAF6EE] font-semibold text-base shadow-sm transition-transform active:scale-[0.98] cursor-pointer whitespace-nowrap"
+                >
+                  <Play className="w-4 h-4 fill-current" />
+                  {hasExistingSave && existingSyncCode ? 'Continue Sanctuary' : 'Start New Sanctuary'}
+                </button>
 
-              <button
-                type="button"
-                onClick={() => setShowRestore(true)}
-                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl bg-[#EFE8DA] hover:bg-[#E5DCCB] text-[#2B382E] font-medium text-sm border border-[#263129]/12 transition-colors cursor-pointer whitespace-nowrap"
-              >
-                <CloudDownload className="w-4 h-4" />
-                Load Sync Code
-              </button>
+                <button
+                  type="button"
+                  onClick={() => setShowRestore(true)}
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl bg-[#EFE8DA] hover:bg-[#E5DCCB] text-[#2B382E] font-medium text-sm border border-[#263129]/12 transition-colors cursor-pointer whitespace-nowrap"
+                >
+                  <CloudDownload className="w-4 h-4" />
+                  Load Sync Code
+                </button>
+              </div>
+
+              {hasExistingSave && (
+                <div>
+                  <button
+                    type="button"
+                    onClick={onStartNewFarm}
+                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#5A6B5C] hover:text-[#2F6E49] transition-colors cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Create a New Sanctuary
+                  </button>
+                </div>
+              )}
             </div>
           ) : (
             <div className="space-y-3 text-left max-w-sm mx-auto">

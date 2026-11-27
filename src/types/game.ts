@@ -128,8 +128,10 @@ export type StorageCrateItem =
 
 export interface DailyQuestItem {
   id: string;
-  type: 'harvest' | 'care' | 'feed_high' | 'visit' | 'craft';
+  type: 'harvest' | 'care' | 'build' | 'feed_high' | 'craft' | 'visit';
   title: string;
+  stage: number;
+  maxStages: number;
   target: number;
   progress: number;
   rewardCoins: number;
@@ -181,7 +183,12 @@ export interface SanctuaryState {
   syncCode: string;
   keeperName: string;
   sanctuaryName: string;
+  sanctuaryMotto?: string;
+  preferredTheme?: 'meadow' | 'autumn' | 'clover' | 'alpine';
   avatarSpecies: SpeciesId;
+  onboardingCompleted?: boolean;
+  tutorialStep?: number; // 0..5 while active, -1 when completed or skipped
+  tutorialSkipped?: boolean;
   level: number;
   xp: number;
   coins: number;

@@ -43,10 +43,12 @@ import {
   createStarterSanctuary,
   ensureEnclosureHistory,
   formatMinSec,
-  generateDailyQuests,
+  generateSyncCode,
   getDecorFootprint,
   isCellOccupied,
+  normalizeDailyQuests,
   normalizeSanctuaryState,
+  promoteDailyQuestStage,
   todayDateString,
   xpRequiredForLevel,
 } from './data/catalog';
@@ -81,6 +83,8 @@ import { DrawerModals, type TerrainThemeId } from './components/DrawerModals';
 import { PhotoModeOverlay } from './components/PhotoModeOverlay';
 import { CircusMiniGamesModal, type MiniGameRewardPayload } from './components/CircusMiniGamesModal';
 import { SpeciesIcon } from './components/SpeciesIcon';
+import { NewFarmModal, type NewFarmSetupPayload } from './components/NewFarmModal';
+import { TutorialOverlay, TOTAL_TUTORIAL_STEPS } from './components/TutorialOverlay';
 
 function applyProgressionAndAchievements(state: SanctuaryState, gainedXp: number): {
   next: SanctuaryState;
@@ -130,19 +134,18 @@ function advanceDailyQuest(
   amount = 1,
 ): SanctuaryState {
   const today = todayDateString();
-  const baseQuests =
-    state.dailyQuests && state.dailyQuests.date === today
-      ? state.dailyQuests
-      : generateDailyQuests(today);
+  const baseQuests = normalizeDailyQuests(state.dailyQuests, today);
 
   let changed = false;
   const nextList = baseQuests.quests.map((q) => {
-    if (q.type !== questType || q.claimed || q.progress >= q.target) return q;
+    if (q.type !== questType || q.claimed) return q;
     changed = true;
-    return { ...q, progress: Math.min(q.target, q.progress + amount) };
+    return { ...q, progress: q.progress + amount };
   });
 
-  if (!changed && state.dailyQuests?.date === today) return state;
+  if (!changed && state.dailyQuests?.date === today && state.dailyQuests.quests.length === baseQuests.quests.length) {
+    return state;
+  }
   return {
     ...state,
     dailyQuests: { date: today, quests: nextList },
@@ -166,6 +169,8 @@ function findFirstOpenSpot(
 
 export default function App() {
   const [screen, setScreen] = useState<'title' | 'playing'>('title');
+  const [hasExistingSave, setHasExistingSave] = useState<boolean>(() => Boolean(loadLocalSanctuary()));
+  const [showNewFarmModal, setShowNewFarmModal] = useState(false);
   const [sanctuary, setSanctuary] = useState<SanctuaryState>(() => {
     const saved = loadLocalSanctuary();
     return saved ? normalizeSanctuaryState(saved) : createStarterSanctuary();
@@ -193,7 +198,9 @@ export default function App() {
   } | null>(null);
   const [showDemolishConfirm, setShowDemolishConfirm] = useState(false);
   const [decorRotation, setDecorRotation] = useState(0);
-  const [terrainTheme, setTerrainTheme] = useState<TerrainThemeId>('meadow');
+  const [terrainTheme, setTerrainTheme] = useState<TerrainThemeId>(
+    () => sanctuary.preferredTheme || 'meadow',
+  );
   const [weatherEnabled, setWeatherEnabled] = useState(true);
   const [timeOfDay, setTimeOfDay] = useState<TimeOfDayId>('day');
   const [ambienceOn, setAmbienceOn] = useState(false);
@@ -751,16 +758,20 @@ export default function App() {
             timesGroomed: 0,
             bondHistory: [{ level: 1, reachedAt: now, source: 'adopted' as const }],
           };
-          const base: SanctuaryState = {
-            ...prev,
-            coins: useGems ? prev.coins : prev.coins - sp.costCoins,
-            gems: useGems ? prev.gems - sp.exoticCostGems : prev.gems,
-            enclosures: [...prev.enclosures, added],
-            seasonalEvent: {
-              ...prev.seasonalEvent,
-              lanternPoints: prev.seasonalEvent.lanternPoints + 25,
+          const base: SanctuaryState = advanceDailyQuest(
+            {
+              ...prev,
+              coins: useGems ? prev.coins : prev.coins - sp.costCoins,
+              gems: useGems ? prev.gems - sp.exoticCostGems : prev.gems,
+              enclosures: [...prev.enclosures, added],
+              seasonalEvent: {
+                ...prev.seasonalEvent,
+                lanternPoints: prev.seasonalEvent.lanternPoints + 25,
+              },
             },
-          };
+            'build',
+            1,
+          );
           const { next, leveledUp, newAchievements } = applyProgressionAndAchievements(base, 45);
           if (leveledUp) pushToast(`Level Up! Sanctuary Level ${next.level}`, 'gold');
           newAchievements.forEach((a) => pushToast(`Achievement Unlocked: ${a}`, 'gold'));
@@ -778,22 +789,28 @@ export default function App() {
         }
         soundEngine.playPlace();
         engineRef.current?.triggerBurstAtGrid(gridX, gridZ, 1, 0x62d980);
-        updateSanctuary((prev) => ({
-          ...prev,
-          coins: prev.coins - cDef.costCoins,
-          crops: [
-            ...prev.crops,
+        updateSanctuary((prev) =>
+          advanceDailyQuest(
             {
-              id: `crop-${Date.now()}`,
-              cropType: choice.cropType,
-              gridX,
-              gridZ,
-              plantedAt: Date.now(),
-              growDurationMs: cDef.growDurationMs,
-              fertilized: false,
+              ...prev,
+              coins: prev.coins - cDef.costCoins,
+              crops: [
+                ...prev.crops,
+                {
+                  id: `crop-${Date.now()}`,
+                  cropType: choice.cropType,
+                  gridX,
+                  gridZ,
+                  plantedAt: Date.now(),
+                  growDurationMs: cDef.growDurationMs,
+                  fertilized: false,
+                },
+              ],
             },
-          ],
-        }));
+            'build',
+            1,
+          ),
+        );
         pushToast(`Planted ${cDef.name}!`, 'emerald');
       } else {
         const dDef = DECOR_CATALOG[choice.decorType];
@@ -805,25 +822,30 @@ export default function App() {
         soundEngine.playPlace();
         engineRef.current?.triggerBurstAtGrid(gridX, gridZ, fp, 0xf2b84b);
         updateSanctuary((prev) => {
-          const base: SanctuaryState = {
-            ...prev,
-            coins: prev.coins - dDef.costCoins,
-            gems: prev.gems - dDef.costGems,
-            decorations: [
-              ...prev.decorations,
-              {
-                id: `dec-${Date.now()}`,
-                decorType: choice.decorType,
-                gridX,
-                gridZ,
-                rotation: decorRotationRef.current,
+          const base: SanctuaryState = advanceDailyQuest(
+            {
+              ...prev,
+              coins: prev.coins - dDef.costCoins,
+              gems: prev.gems - dDef.costGems,
+              decorations: [
+                ...prev.decorations,
+                {
+                  id: `dec-${Date.now()}`,
+                  decorType: choice.decorType,
+                  gridX,
+                  gridZ,
+                  rotation: decorRotationRef.current,
+                },
+              ],
+              seasonalEvent: {
+                ...prev.seasonalEvent,
+                lanternPoints:
+                  prev.seasonalEvent.lanternPoints + (choice.decorType === 'circus_tent' ? 40 : 12),
               },
-            ],
-            seasonalEvent: {
-              ...prev.seasonalEvent,
-              lanternPoints: prev.seasonalEvent.lanternPoints + (choice.decorType === 'circus_tent' ? 40 : 12),
             },
-          };
+            'build',
+            1,
+          );
           const { next, newAchievements } = applyProgressionAndAchievements(
             base,
             choice.decorType === 'circus_tent' ? 60 : 15,
@@ -1184,6 +1206,9 @@ export default function App() {
     });
     engineRef.current = engine;
     engine.syncSanctuary(sanctuaryRef.current);
+    if (sanctuaryRef.current.preferredTheme) {
+      engine.setTerrainTheme(sanctuaryRef.current.preferredTheme);
+    }
 
     return () => {
       engine.dispose();
@@ -1804,7 +1829,7 @@ export default function App() {
         'care',
         1,
       );
-      if (score >= 110) {
+      if (score >= 100) {
         base = advanceDailyQuest(base, 'feed_high', 1);
       }
       const { next, leveledUp, newAchievements } = applyProgressionAndAchievements(base, 36);
@@ -2191,10 +2216,12 @@ export default function App() {
   const handleClaimQuest = (questId: string) => {
     const q = (sanctuary.dailyQuests?.quests || []).find((item) => item.id === questId);
     if (!q || q.claimed || q.progress < q.target) return;
+    const promoted = promoteDailyQuestStage(q);
+    const advancedStage = promoted.stage > q.stage;
     soundEngine.playCelebration();
     updateSanctuary((prev) => {
       const quests = (prev.dailyQuests?.quests || []).map((item) =>
-        item.id === questId ? { ...item, claimed: true } : item,
+        item.id === questId ? promoteDailyQuestStage(item) : item,
       );
       const base: SanctuaryState = {
         ...prev,
@@ -2215,7 +2242,9 @@ export default function App() {
       return next;
     });
     pushToast(
-      `Quest Complete! +${q.rewardCoins} Coins, +${q.rewardGems} Gems & +${q.rewardLanterns} Lantern Pts`,
+      advancedStage
+        ? `Stage ${q.stage} Claimed (+${q.rewardCoins}c, +${q.rewardGems}g)! Next: ${promoted.title}`
+        : `Daily Task Maxed! +${q.rewardCoins} Coins, +${q.rewardGems} Gems & +${q.rewardLanterns} Lantern Pts`,
       'gold',
     );
   };
@@ -2296,30 +2325,209 @@ export default function App() {
     pushToast(`Expanded your sanctuary meadow to ${targetSize}×${targetSize}!`, 'gold');
   };
 
-  // --- Demolish Everything & Start Fresh ---
-  const handleConfirmDemolish = () => {
+  // --- Create New Farm from Onboarding Popup ---
+  const handleConfirmNewFarm = (payload: NewFarmSetupPayload) => {
     const fresh = createStarterSanctuary(
-      sanctuary.keeperName,
-      sanctuary.sanctuaryName,
-      sanctuary.syncCode,
+      payload.keeperName,
+      payload.sanctuaryName,
+      generateSyncCode(),
+      {
+        avatarSpecies: payload.avatarSpecies,
+        sanctuaryMotto: payload.sanctuaryMotto,
+        preferredTheme: payload.preferredTheme,
+        onboardingCompleted: true,
+        tutorialStep: payload.skipTutorial ? -1 : 0,
+        tutorialSkipped: payload.skipTutorial,
+      },
     );
+    setShowNewFarmModal(false);
     setShowDemolishConfirm(false);
     setEditMode(false);
     setMovingItem(null);
+    setPendingEditTarget(null);
     setPlacementChoice(null);
     setSelectedEnclosureId(null);
     setActiveDrawer(null);
     setVisitingSanctuary(null);
+    setTerrainTheme(payload.preferredTheme);
+    engineRef.current?.setTerrainTheme(payload.preferredTheme);
     setSanctuary(fresh);
+    tutorialBaselineRef.current = {
+      feeds: 0,
+      grooms: 0,
+      harvests: 0,
+      placedTotal: fresh.enclosures.length + fresh.crops.length + fresh.decorations.length,
+    };
+    setHasExistingSave(true);
     setPendingIdleCoins(0);
     saveLocalSanctuary(fresh);
+    setScreen('playing');
     setCloudStatus('saving');
     void pushCloudSave(fresh).then((res) => {
       setCloudStatus(res.ok ? 'synced' : 'offline');
     });
-    soundEngine.playPlace();
+    soundEngine.playCelebration();
     window.setTimeout(() => engineRef.current?.resetCamera(), 80);
-    pushToast('Sanctuary demolished! Starting fresh from the beginning.', 'gold');
+    const starter = fresh.enclosures[0];
+    const starterSpeciesLabel = starter ? SPECIES_CATALOG[starter.species].name : 'companion';
+    pushToast(
+      starter
+        ? `Welcome to ${fresh.sanctuaryName}! Meet ${starter.name} the ${starterSpeciesLabel}!`
+        : `Welcome to ${fresh.sanctuaryName}!`,
+      'gold',
+    );
+  };
+
+  // --- Guided Tutorial Handlers & Auto-Advance ---
+  const tutorialBaselineRef = useRef<{
+    feeds: number;
+    grooms: number;
+    harvests: number;
+    placedTotal: number;
+  }>({
+    feeds: sanctuary.stats.totalFeeds,
+    grooms: sanctuary.stats.totalGrooms,
+    harvests: sanctuary.stats.totalHarvests,
+    placedTotal:
+      sanctuary.enclosures.length + sanctuary.crops.length + sanctuary.decorations.length,
+  });
+
+  useEffect(() => {
+    const step = sanctuary.tutorialStep;
+    if (screen !== 'playing' || typeof step !== 'number' || step < 0 || step >= TOTAL_TUTORIAL_STEPS) {
+      return;
+    }
+    const base = tutorialBaselineRef.current;
+    const currentPlaced =
+      sanctuary.enclosures.length + sanctuary.crops.length + sanctuary.decorations.length;
+
+    if (step === 0 && selectedEnclosureId) {
+      tutorialBaselineRef.current = {
+        feeds: sanctuary.stats.totalFeeds,
+        grooms: sanctuary.stats.totalGrooms,
+        harvests: sanctuary.stats.totalHarvests,
+        placedTotal: currentPlaced,
+      };
+      updateSanctuary((prev) => (prev.tutorialStep === 0 ? { ...prev, tutorialStep: 1 } : prev));
+      return;
+    }
+    if (step === 1 && sanctuary.stats.totalFeeds > base.feeds) {
+      tutorialBaselineRef.current.feeds = sanctuary.stats.totalFeeds;
+      tutorialBaselineRef.current.grooms = sanctuary.stats.totalGrooms;
+      updateSanctuary((prev) =>
+        prev.tutorialStep === 1 ? { ...prev, coins: prev.coins + 50, tutorialStep: 2 } : prev,
+      );
+      pushToast('Tutorial Step Complete: Feeding! (+50 Coins)', 'gold');
+      return;
+    }
+    if (step === 2 && sanctuary.stats.totalGrooms > base.grooms) {
+      tutorialBaselineRef.current.grooms = sanctuary.stats.totalGrooms;
+      tutorialBaselineRef.current.harvests = sanctuary.stats.totalHarvests;
+      updateSanctuary((prev) =>
+        prev.tutorialStep === 2 ? { ...prev, coins: prev.coins + 50, tutorialStep: 3 } : prev,
+      );
+      pushToast('Tutorial Step Complete: Grooming! (+50 Coins)', 'gold');
+      return;
+    }
+    if (step === 3 && sanctuary.stats.totalHarvests > base.harvests) {
+      tutorialBaselineRef.current.harvests = sanctuary.stats.totalHarvests;
+      tutorialBaselineRef.current.placedTotal = currentPlaced;
+      updateSanctuary((prev) =>
+        prev.tutorialStep === 3 ? { ...prev, coins: prev.coins + 40, tutorialStep: 4 } : prev,
+      );
+      pushToast('Tutorial Step Complete: Harvesting! (+40 Coins)', 'gold');
+      return;
+    }
+    if (step === 4 && currentPlaced > base.placedTotal) {
+      tutorialBaselineRef.current.placedTotal = currentPlaced;
+      updateSanctuary((prev) =>
+        prev.tutorialStep === 4
+          ? { ...prev, coins: prev.coins + 60, gems: prev.gems + 3, tutorialStep: 5 }
+          : prev,
+      );
+      pushToast('Tutorial Step Complete: Building! (+60 Coins, +3 Gems)', 'gold');
+    }
+  }, [
+    screen,
+    sanctuary.tutorialStep,
+    sanctuary.stats.totalFeeds,
+    sanctuary.stats.totalGrooms,
+    sanctuary.stats.totalHarvests,
+    sanctuary.enclosures.length,
+    sanctuary.crops.length,
+    sanctuary.decorations.length,
+    selectedEnclosureId,
+    updateSanctuary,
+    pushToast,
+  ]);
+
+  const handleAdvanceTutorial = () => {
+    soundEngine.playClick();
+    tutorialBaselineRef.current = {
+      feeds: sanctuary.stats.totalFeeds,
+      grooms: sanctuary.stats.totalGrooms,
+      harvests: sanctuary.stats.totalHarvests,
+      placedTotal:
+        sanctuary.enclosures.length + sanctuary.crops.length + sanctuary.decorations.length,
+    };
+    updateSanctuary((prev) => {
+      const cur = typeof prev.tutorialStep === 'number' ? prev.tutorialStep : 0;
+      const next = cur + 1;
+      return { ...prev, tutorialStep: next >= TOTAL_TUTORIAL_STEPS ? -1 : next };
+    });
+  };
+
+  const handleFinishTutorial = () => {
+    soundEngine.playCelebration();
+    updateSanctuary((prev) => ({
+      ...prev,
+      coins: prev.coins + 100,
+      gems: prev.gems + 5,
+      tutorialStep: -1,
+      tutorialSkipped: false,
+    }));
+    pushToast('Tutorial Complete! Welcome Bonus: +100 Coins & +5 Gems!', 'gold');
+  };
+
+  const handleSkipTutorial = () => {
+    soundEngine.playClick();
+    updateSanctuary((prev) => ({
+      ...prev,
+      tutorialStep: -1,
+      tutorialSkipped: true,
+    }));
+    pushToast('Tutorial skipped — replay it anytime from the Manual.', 'sky');
+  };
+
+  const handleReplayTutorial = () => {
+    soundEngine.playClick();
+    tutorialBaselineRef.current = {
+      feeds: sanctuary.stats.totalFeeds,
+      grooms: sanctuary.stats.totalGrooms,
+      harvests: sanctuary.stats.totalHarvests,
+      placedTotal:
+        sanctuary.enclosures.length + sanctuary.crops.length + sanctuary.decorations.length,
+    };
+    updateSanctuary((prev) => ({
+      ...prev,
+      tutorialStep: 0,
+      tutorialSkipped: false,
+    }));
+    pushToast('Guided Tutorial restarted!', 'emerald');
+  };
+
+  // --- Demolish Everything & Start Fresh ---
+  const handleConfirmDemolish = () => {
+    soundEngine.playClick();
+    setShowDemolishConfirm(false);
+    setEditMode(false);
+    setMovingItem(null);
+    setPendingEditTarget(null);
+    setPlacementChoice(null);
+    setSelectedEnclosureId(null);
+    setActiveDrawer(null);
+    setVisitingSanctuary(null);
+    setShowNewFarmModal(true);
   };
 
   const handleLoadSyncCode = async (code: string): Promise<boolean> => {
@@ -2328,9 +2536,16 @@ export default function App() {
     const normalized = normalizeSanctuaryState(loaded);
     saveLocalSanctuary(normalized);
     setSanctuary(normalized);
+    setHasExistingSave(true);
+    setShowNewFarmModal(false);
     setVisitingSanctuary(null);
     setEditMode(false);
     setMovingItem(null);
+    setPendingEditTarget(null);
+    if (normalized.preferredTheme) {
+      setTerrainTheme(normalized.preferredTheme);
+      engineRef.current?.setTerrainTheme(normalized.preferredTheme);
+    }
     setScreen('playing');
     setPendingIdleCoins(computePendingIdleCoins(normalized));
     soundEngine.playCelebration();
@@ -2427,10 +2642,20 @@ export default function App() {
       {/* Title Screen */}
       {screen === 'title' && (
         <TitleScreen
+          hasExistingSave={hasExistingSave}
           existingSyncCode={sanctuary.syncCode}
           onStart={() => {
+            if (!hasExistingSave || sanctuary.onboardingCompleted === false) {
+              soundEngine.playClick();
+              setShowNewFarmModal(true);
+              return;
+            }
             soundEngine.playCelebration();
             setScreen('playing');
+          }}
+          onStartNewFarm={() => {
+            soundEngine.playClick();
+            setShowNewFarmModal(true);
           }}
           onLoadSyncCode={handleLoadSyncCode}
         />
@@ -2545,6 +2770,37 @@ export default function App() {
                 touchDragMode={touchDragMode}
                 onChangeTouchDragMode={handleChangeTouchDragMode}
               />
+
+              {/* Interactive Guided Tutorial Overlay */}
+              {!visitingSanctuary &&
+                !showNewFarmModal &&
+                typeof sanctuary.tutorialStep === 'number' &&
+                sanctuary.tutorialStep >= 0 &&
+                sanctuary.tutorialStep < TOTAL_TUTORIAL_STEPS && (
+                  <TutorialOverlay
+                    sanctuary={sanctuary}
+                    step={sanctuary.tutorialStep}
+                    onFocusStarterAnimal={() => {
+                      const first = sanctuary.enclosures[0];
+                      if (first) {
+                        engineRef.current?.focusEnclosure(first.id);
+                      }
+                    }}
+                    onOpenStarterEnclosure={() => {
+                      const first = sanctuary.enclosures[0];
+                      if (first) {
+                        soundEngine.playClick();
+                        setActiveDrawer(null);
+                        setSelectedEnclosureId(first.id);
+                        engineRef.current?.focusEnclosure(first.id);
+                      }
+                    }}
+                    onOpenDrawer={handleOpenDrawer}
+                    onAdvanceStep={handleAdvanceTutorial}
+                    onFinishTutorial={handleFinishTutorial}
+                    onSkipTutorial={handleSkipTutorial}
+                  />
+                )}
             </>
           )}
 
@@ -2754,6 +3010,7 @@ export default function App() {
                 handleSendChat(msg, 'milestone');
                 pushToast('Shared sanctuary postcard highlight to Community Chat!', 'gold');
               }}
+              onReplayTutorial={handleReplayTutorial}
             />
           )}
 
@@ -2798,6 +3055,18 @@ export default function App() {
             </div>
           )}
         </>
+      )}
+
+      {/* New Sanctuary Setup Popup */}
+      {showNewFarmModal && (
+        <NewFarmModal
+          canCancel={hasExistingSave}
+          onCancel={() => {
+            soundEngine.playClick();
+            setShowNewFarmModal(false);
+          }}
+          onConfirm={handleConfirmNewFarm}
+        />
       )}
     </div>
   );

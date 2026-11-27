@@ -13,7 +13,7 @@ import type {
   SanctuaryState,
   SpeciesId,
 } from '../types/game';
-import { computePrestige, normalizeSanctuaryState } from '../data/catalog';
+import { GENERATED_GROVE_CODES, computePrestige, normalizeSanctuaryState } from '../data/catalog';
 
 const STORAGE_KEY = 'wildgrove_sanctuary_save_v1';
 const FALLBACK_SANCTUARIES_KEY = 'wildgrove_fallback_sanctuaries_v1';
@@ -40,438 +40,7 @@ function isBackendAvailable(): Promise<boolean> {
   return backendAvailablePromise;
 }
 
-function createEmptyInventory(overrides: Partial<Record<ResourceId, number>> = {}): Record<ResourceId, number> {
-  return {
-    berry_treat: 0,
-    mango_treat: 0,
-    nectar_treat: 0,
-    herb_treat: 0,
-    bamboo_shoot_treat: 0,
-    fox_berry_treat: 0,
-    ice_fish_treat: 0,
-    river_reed_treat: 0,
-    lucky_acorn: 0,
-    silverback_amber: 0,
-    wing_dust: 0,
-    moonstone_pelt: 0,
-    lantern_charm: 0,
-    fire_tail_charm: 0,
-    sun_crystal: 0,
-    frost_pelt: 0,
-    river_pearl: 0,
-    jade_lily_dew: 0,
-    prism_scale: 0,
-    ancient_shell_amber: 0,
-    sunstone_scale: 0,
-    gourmet_treat: 0,
-    sunbeam_fertilizer: 0,
-    meadow_sprinkler: 0,
-    ...overrides,
-  };
-}
-
-function buildSeedSanctuaries(): Record<string, SanctuaryState> {
-  const now = Date.now();
-  const list: SanctuaryState[] = [
-    {
-      syncCode: 'GROVE-LUNA',
-      keeperName: 'Maren',
-      sanctuaryName: 'Moonpine Wolf Sanctuary',
-      avatarSpecies: 'wolf',
-      level: 8,
-      xp: 420,
-      coins: 3420,
-      gems: 64,
-      prestige: 0,
-      enclosures: [
-        {
-          id: 'maren-e1',
-          species: 'wolf',
-          name: 'Freya',
-          variant: 'exotic',
-          gridX: 2,
-          gridZ: 2,
-          happiness: 96,
-          hunger: 92,
-          grooming: 95,
-          bondLevel: 7,
-          lastFedAt: now - 60000,
-          lastGroomedAt: now - 90000,
-          visitorHearts: 18,
-        },
-        {
-          id: 'maren-e2',
-          species: 'snow_leopard',
-          name: 'Glacier',
-          variant: 'exotic',
-          gridX: 7,
-          gridZ: 2,
-          happiness: 94,
-          hunger: 88,
-          grooming: 92,
-          bondLevel: 6,
-          lastFedAt: now - 110000,
-          lastGroomedAt: now - 140000,
-          visitorHearts: 14,
-        },
-        {
-          id: 'maren-e3',
-          species: 'butterfly',
-          name: 'Aurelia',
-          variant: 'exotic',
-          gridX: 2,
-          gridZ: 7,
-          happiness: 95,
-          hunger: 91,
-          grooming: 94,
-          bondLevel: 6,
-          lastFedAt: now - 70000,
-          lastGroomedAt: now - 80000,
-          visitorHearts: 15,
-        },
-        {
-          id: 'maren-e4',
-          species: 'gorilla',
-          name: 'Kibo',
-          variant: 'classic',
-          gridX: 7,
-          gridZ: 7,
-          happiness: 91,
-          hunger: 86,
-          grooming: 90,
-          bondLevel: 5,
-          lastFedAt: now - 120000,
-          lastGroomedAt: now - 150000,
-          visitorHearts: 11,
-        },
-      ],
-      crops: [
-        { id: 'mc1', cropType: 'herb', gridX: 5, gridZ: 4, plantedAt: now - 650000, growDurationMs: 600000 },
-        { id: 'mc2', cropType: 'ice_fish', gridX: 6, gridZ: 4, plantedAt: now - 650000, growDurationMs: 600000 },
-        { id: 'mc3', cropType: 'lavender', gridX: 5, gridZ: 5, plantedAt: now - 650000, growDurationMs: 600000 },
-      ],
-      decorations: [
-        { id: 'md1', decorType: 'gazebo', gridX: 5, gridZ: 2, rotation: 0 },
-        { id: 'md2', decorType: 'fountain', gridX: 5, gridZ: 7, rotation: 0 },
-        { id: 'md3', decorType: 'koi_pond', gridX: 6, gridZ: 6, rotation: 0 },
-        { id: 'md4', decorType: 'autumn_maple', gridX: 1, gridZ: 5, rotation: 0 },
-        { id: 'md5', decorType: 'autumn_maple', gridX: 10, gridZ: 5, rotation: 1 },
-        { id: 'md6', decorType: 'lantern_post', gridX: 4, gridZ: 4, rotation: 0 },
-        { id: 'md7', decorType: 'lantern_post', gridX: 7, gridZ: 4, rotation: 2 },
-        { id: 'md8', decorType: 'flower_arch', gridX: 5, gridZ: 9, rotation: 0 },
-      ],
-      inventory: createEmptyInventory({
-        berry_treat: 12,
-        mango_treat: 10,
-        nectar_treat: 14,
-        herb_treat: 16,
-        ice_fish_treat: 10,
-        lucky_acorn: 5,
-        silverback_amber: 4,
-        wing_dust: 6,
-        moonstone_pelt: 8,
-        frost_pelt: 6,
-        lantern_charm: 9,
-      }),
-      dailyReward: { streak: 6, lastClaimDate: '2026-11-25' },
-      seasonalEvent: { eventId: 'autumn-lantern-harvest-2026', lanternPoints: 340, claimedMilestones: ['m1', 'm2', 'm3'] },
-      unlockedAchievements: ['four_species', 'exotic_collector', 'master_caretaker', 'grand_landscape', 'trade_magnate'],
-      stats: { totalFeeds: 48, totalGrooms: 44, totalHarvests: 61, totalTrades: 14, friendsVisited: 9 },
-      updatedAt: now - 300000,
-    },
-    {
-      syncCode: 'GROVE-FERN',
-      keeperName: 'Kenji',
-      sanctuaryName: 'Emerald Bamboo Canopy',
-      avatarSpecies: 'gorilla',
-      level: 7,
-      xp: 290,
-      coins: 2480,
-      gems: 42,
-      prestige: 0,
-      enclosures: [
-        {
-          id: 'kenji-e1',
-          species: 'gorilla',
-          name: 'Taro',
-          variant: 'exotic',
-          gridX: 2,
-          gridZ: 2,
-          happiness: 94,
-          hunger: 89,
-          grooming: 91,
-          bondLevel: 6,
-          lastFedAt: now - 90000,
-          lastGroomedAt: now - 110000,
-          visitorHearts: 13,
-        },
-        {
-          id: 'kenji-e2',
-          species: 'red_panda',
-          name: 'Mochi',
-          variant: 'exotic',
-          gridX: 7,
-          gridZ: 2,
-          happiness: 93,
-          hunger: 90,
-          grooming: 92,
-          bondLevel: 5,
-          lastFedAt: now - 85000,
-          lastGroomedAt: now - 105000,
-          visitorHearts: 12,
-        },
-        {
-          id: 'kenji-e3',
-          species: 'river_otter',
-          name: 'Pebble',
-          variant: 'classic',
-          gridX: 2,
-          gridZ: 7,
-          happiness: 91,
-          hunger: 87,
-          grooming: 90,
-          bondLevel: 5,
-          lastFedAt: now - 95000,
-          lastGroomedAt: now - 120000,
-          visitorHearts: 10,
-        },
-        {
-          id: 'kenji-e4',
-          species: 'raccoon',
-          name: 'Pip',
-          variant: 'classic',
-          gridX: 7,
-          gridZ: 7,
-          happiness: 90,
-          hunger: 85,
-          grooming: 88,
-          bondLevel: 4,
-          lastFedAt: now - 100000,
-          lastGroomedAt: now - 130000,
-          visitorHearts: 8,
-        },
-      ],
-      crops: [
-        { id: 'kc1', cropType: 'mango', gridX: 5, gridZ: 4, plantedAt: now - 650000, growDurationMs: 600000 },
-        { id: 'kc2', cropType: 'bamboo_shoot', gridX: 6, gridZ: 4, plantedAt: now - 650000, growDurationMs: 600000 },
-        { id: 'kc3', cropType: 'river_reed', gridX: 5, gridZ: 5, plantedAt: now - 650000, growDurationMs: 600000 },
-      ],
-      decorations: [
-        { id: 'kd1', decorType: 'bamboo', gridX: 1, gridZ: 2, rotation: 0 },
-        { id: 'kd2', decorType: 'bamboo', gridX: 1, gridZ: 3, rotation: 1 },
-        { id: 'kd3', decorType: 'bamboo', gridX: 10, gridZ: 2, rotation: 2 },
-        { id: 'kd4', decorType: 'koi_pond', gridX: 5, gridZ: 6, rotation: 0 },
-        { id: 'kd5', decorType: 'gazebo', gridX: 5, gridZ: 2, rotation: 0 },
-        { id: 'kd6', decorType: 'lantern_post', gridX: 4, gridZ: 5, rotation: 0 },
-        { id: 'kd7', decorType: 'willow', gridX: 9, gridZ: 9, rotation: 0 },
-      ],
-      inventory: createEmptyInventory({
-        berry_treat: 8,
-        mango_treat: 14,
-        bamboo_shoot_treat: 12,
-        river_reed_treat: 10,
-        lucky_acorn: 6,
-        silverback_amber: 7,
-        fire_tail_charm: 5,
-        river_pearl: 6,
-        lantern_charm: 5,
-      }),
-      dailyReward: { streak: 4, lastClaimDate: '2026-11-25' },
-      seasonalEvent: { eventId: 'autumn-lantern-harvest-2026', lanternPoints: 210, claimedMilestones: ['m1', 'm2'] },
-      unlockedAchievements: ['four_species', 'exotic_collector', 'master_caretaker', 'grand_landscape'],
-      stats: { totalFeeds: 29, totalGrooms: 24, totalHarvests: 40, totalTrades: 9, friendsVisited: 6 },
-      updatedAt: now - 600000,
-    },
-    {
-      syncCode: 'GROVE-IRIS',
-      keeperName: 'Clara',
-      sanctuaryName: 'Petal & Wing Conservatory',
-      avatarSpecies: 'butterfly',
-      level: 6,
-      xp: 310,
-      coins: 1990,
-      gems: 51,
-      prestige: 0,
-      enclosures: [
-        {
-          id: 'clara-e1',
-          species: 'butterfly',
-          name: 'Morpho',
-          variant: 'exotic',
-          gridX: 2,
-          gridZ: 2,
-          happiness: 97,
-          hunger: 94,
-          grooming: 96,
-          bondLevel: 6,
-          lastFedAt: now - 55000,
-          lastGroomedAt: now - 75000,
-          visitorHearts: 16,
-        },
-        {
-          id: 'clara-e2',
-          species: 'golden_fox',
-          name: 'Sol',
-          variant: 'exotic',
-          gridX: 7,
-          gridZ: 2,
-          happiness: 95,
-          hunger: 90,
-          grooming: 93,
-          bondLevel: 5,
-          lastFedAt: now - 65000,
-          lastGroomedAt: now - 85000,
-          visitorHearts: 13,
-        },
-        {
-          id: 'clara-e3',
-          species: 'raccoon',
-          name: 'Clover',
-          variant: 'exotic',
-          gridX: 2,
-          gridZ: 7,
-          happiness: 95,
-          hunger: 91,
-          grooming: 93,
-          bondLevel: 5,
-          lastFedAt: now - 75000,
-          lastGroomedAt: now - 95000,
-          visitorHearts: 14,
-        },
-        {
-          id: 'clara-e4',
-          species: 'wolf',
-          name: 'Bramble',
-          variant: 'classic',
-          gridX: 7,
-          gridZ: 7,
-          happiness: 89,
-          hunger: 84,
-          grooming: 88,
-          bondLevel: 4,
-          lastFedAt: now - 95000,
-          lastGroomedAt: now - 115000,
-          visitorHearts: 9,
-        },
-      ],
-      crops: [
-        { id: 'cc1', cropType: 'lavender', gridX: 5, gridZ: 4, plantedAt: now - 650000, growDurationMs: 600000 },
-        { id: 'cc2', cropType: 'fox_berry', gridX: 6, gridZ: 4, plantedAt: now - 650000, growDurationMs: 600000 },
-        { id: 'cc3', cropType: 'berry', gridX: 5, gridZ: 5, plantedAt: now - 650000, growDurationMs: 600000 },
-      ],
-      decorations: [
-        { id: 'cd1', decorType: 'flower_arch', gridX: 5, gridZ: 2, rotation: 0 },
-        { id: 'cd2', decorType: 'fountain', gridX: 5, gridZ: 6, rotation: 0 },
-        { id: 'cd3', decorType: 'willow', gridX: 1, gridZ: 5, rotation: 0 },
-        { id: 'cd4', decorType: 'willow', gridX: 10, gridZ: 5, rotation: 1 },
-        { id: 'cd5', decorType: 'hay_cart', gridX: 6, gridZ: 6, rotation: 1 },
-        { id: 'cd6', decorType: 'lantern_post', gridX: 4, gridZ: 4, rotation: 0 },
-        { id: 'cd7', decorType: 'lantern_post', gridX: 7, gridZ: 4, rotation: 2 },
-        { id: 'cd8', decorType: 'autumn_maple', gridX: 5, gridZ: 9, rotation: 0 },
-      ],
-      inventory: createEmptyInventory({
-        berry_treat: 9,
-        nectar_treat: 18,
-        fox_berry_treat: 11,
-        wing_dust: 9,
-        sun_crystal: 6,
-        lantern_charm: 7,
-      }),
-      dailyReward: { streak: 5, lastClaimDate: '2026-11-25' },
-      seasonalEvent: { eventId: 'autumn-lantern-harvest-2026', lanternPoints: 265, claimedMilestones: ['m1', 'm2'] },
-      unlockedAchievements: ['four_species', 'exotic_collector', 'master_caretaker', 'grand_landscape'],
-      stats: { totalFeeds: 35, totalGrooms: 33, totalHarvests: 48, totalTrades: 11, friendsVisited: 7 },
-      updatedAt: now - 450000,
-    },
-    {
-      syncCode: 'GROVE-OAK7',
-      keeperName: 'Tomas',
-      sanctuaryName: 'Acorn Creek Homestead',
-      avatarSpecies: 'raccoon',
-      level: 4,
-      xp: 145,
-      coins: 1120,
-      gems: 22,
-      prestige: 0,
-      enclosures: [
-        {
-          id: 'tomas-e1',
-          species: 'raccoon',
-          name: 'Bandit',
-          variant: 'classic',
-          gridX: 2,
-          gridZ: 3,
-          happiness: 88,
-          hunger: 82,
-          grooming: 85,
-          bondLevel: 4,
-          lastFedAt: now - 120000,
-          lastGroomedAt: now - 150000,
-          visitorHearts: 7,
-        },
-        {
-          id: 'tomas-e2',
-          species: 'wolf',
-          name: 'Timber',
-          variant: 'classic',
-          gridX: 7,
-          gridZ: 3,
-          happiness: 85,
-          hunger: 79,
-          grooming: 81,
-          bondLevel: 3,
-          lastFedAt: now - 130000,
-          lastGroomedAt: now - 160000,
-          visitorHearts: 5,
-        },
-        {
-          id: 'tomas-e3',
-          species: 'gorilla',
-          name: 'Moss',
-          variant: 'classic',
-          gridX: 5,
-          gridZ: 7,
-          happiness: 83,
-          hunger: 77,
-          grooming: 80,
-          bondLevel: 3,
-          lastFedAt: now - 140000,
-          lastGroomedAt: now - 170000,
-          visitorHearts: 4,
-        },
-      ],
-      crops: [
-        { id: 'tc1', cropType: 'berry', gridX: 4, gridZ: 5, plantedAt: now - 650000, growDurationMs: 600000 },
-        { id: 'tc2', cropType: 'herb', gridX: 5, gridZ: 5, plantedAt: now - 650000, growDurationMs: 600000 },
-      ],
-      decorations: [
-        { id: 'td1', decorType: 'hay_cart', gridX: 6, gridZ: 5, rotation: 0 },
-        { id: 'td2', decorType: 'koi_pond', gridX: 5, gridZ: 2, rotation: 0 },
-        { id: 'td3', decorType: 'autumn_maple', gridX: 2, gridZ: 7, rotation: 0 },
-        { id: 'td4', decorType: 'lantern_post', gridX: 3, gridZ: 6, rotation: 0 },
-        { id: 'td5', decorType: 'willow', gridX: 9, gridZ: 7, rotation: 0 },
-      ],
-      inventory: createEmptyInventory({
-        berry_treat: 10,
-        herb_treat: 8,
-        lucky_acorn: 5,
-        lantern_charm: 3,
-      }),
-      dailyReward: { streak: 3, lastClaimDate: '2026-11-25' },
-      seasonalEvent: { eventId: 'autumn-lantern-harvest-2026', lanternPoints: 120, claimedMilestones: ['m1'] },
-      unlockedAchievements: ['master_caretaker'],
-      stats: { totalFeeds: 18, totalGrooms: 14, totalHarvests: 25, totalTrades: 5, friendsVisited: 3 },
-      updatedAt: now - 900000,
-    },
-  ];
-
-  const map: Record<string, SanctuaryState> = {};
-  for (const s of list) {
-    s.prestige = computePrestige(s);
-    map[s.syncCode] = s;
-  }
-  return map;
-}
+// Computer-generated sanctuaries removed — Friends & Directory display only real player sanctuaries.
 
 function buildSeedMarketplace(): MarketplaceListing[] {
   const now = Date.now();
@@ -584,36 +153,7 @@ function buildSeedMarketplace(): MarketplaceListing[] {
 }
 
 function buildSeedChat(): ChatMessage[] {
-  const now = Date.now();
-  return [
-    {
-      id: 'chat-seed-1',
-      senderCode: 'GROVE-LUNA',
-      senderName: 'Maren',
-      avatarSpecies: 'wolf',
-      text: 'Welcome to Wildgrove Sanctuary! Just listed Moonlit Ridge Charms and Glacial Frost Pelts on the market.',
-      tag: 'trade',
-      timestamp: now - 540000,
-    },
-    {
-      id: 'chat-seed-2',
-      senderCode: 'GROVE-IRIS',
-      senderName: 'Clara',
-      avatarSpecies: 'butterfly',
-      text: 'Come visit Petal & Wing Conservatory anytime — my Sapphire Morpho and Celestial Star Fox love visitors!',
-      tag: 'visit',
-      timestamp: now - 310000,
-    },
-    {
-      id: 'chat-seed-3',
-      senderCode: 'GROVE-FERN',
-      senderName: 'Kenji',
-      avatarSpecies: 'gorilla',
-      text: 'Tip: placing Bamboo and Lantern Posts beside enclosures boosts your Prestige rank fast.',
-      tag: 'general',
-      timestamp: now - 150000,
-    },
-  ];
+  return [];
 }
 
 // --- Local Persistence Helpers (instant boot + complete static-hosting support) ---
@@ -632,19 +172,23 @@ export function loadLocalSanctuary(): SanctuaryState | null {
 }
 
 function readFallbackMap(): Record<string, SanctuaryState> {
-  const seeds = buildSeedSanctuaries();
+  const result: Record<string, SanctuaryState> = {};
   try {
     const raw = localStorage.getItem(FALLBACK_SANCTUARIES_KEY);
     if (raw) {
-      const parsed = JSON.parse(raw);
+      const parsed = JSON.parse(raw) as Record<string, SanctuaryState>;
       if (parsed && typeof parsed === 'object') {
-        return { ...seeds, ...(parsed as Record<string, SanctuaryState>) };
+        for (const [code, s] of Object.entries(parsed)) {
+          if (!GENERATED_GROVE_CODES.has(code) && s && typeof s === 'object') {
+            result[code] = s;
+          }
+        }
       }
     }
   } catch {
     // Ignore
   }
-  return seeds;
+  return result;
 }
 
 function writeFallbackMap(map: Record<string, SanctuaryState>): void {
@@ -746,12 +290,13 @@ export async function fetchCommunitySanctuaries(): Promise<CommunitySanctuarySum
   if (await isBackendAvailable()) {
     const res = await fetchJson<{ sanctuaries?: CommunitySanctuarySummary[] }>('/api/sanctuaries');
     if (res.ok && Array.isArray(res.data?.sanctuaries)) {
-      return res.data.sanctuaries;
+      return res.data.sanctuaries.filter((s) => !GENERATED_GROVE_CODES.has(s.syncCode));
     }
   }
 
   const map = readFallbackMap();
   return Object.values(map)
+    .filter((s) => !GENERATED_GROVE_CODES.has(s.syncCode))
     .map((s) => ({
       syncCode: s.syncCode,
       keeperName: s.keeperName,
@@ -1013,20 +558,24 @@ export async function fetchLeaderboard(): Promise<LeaderboardEntry[]> {
   if (await isBackendAvailable()) {
     const res = await fetchJson<{ leaderboard?: LeaderboardEntry[] }>('/api/leaderboard');
     if (res.ok && Array.isArray(res.data?.leaderboard)) {
-      return res.data.leaderboard;
+      return res.data.leaderboard
+        .filter((entry) => !GENERATED_GROVE_CODES.has(entry.syncCode))
+        .map((entry, idx) => ({ ...entry, rank: idx + 1 }));
     }
   }
   const map = readFallbackMap();
-  const list = Object.values(map).map((s) => ({
-    syncCode: s.syncCode,
-    keeperName: s.keeperName,
-    sanctuaryName: s.sanctuaryName,
-    avatarSpecies: s.avatarSpecies,
-    level: s.level,
-    prestige: computePrestige(s),
-    exoticCount: s.enclosures.filter((e) => e.variant === 'exotic').length,
-    animalCount: s.enclosures.length,
-  }));
+  const list = Object.values(map)
+    .filter((s) => !GENERATED_GROVE_CODES.has(s.syncCode))
+    .map((s) => ({
+      syncCode: s.syncCode,
+      keeperName: s.keeperName,
+      sanctuaryName: s.sanctuaryName,
+      avatarSpecies: s.avatarSpecies,
+      level: s.level,
+      prestige: computePrestige(s),
+      exoticCount: s.enclosures.filter((e) => e.variant === 'exotic').length,
+      animalCount: s.enclosures.length,
+    }));
   list.sort((a, b) => b.prestige - a.prestige);
   return list.map((entry, idx) => ({ rank: idx + 1, ...entry }));
 }
@@ -1078,8 +627,11 @@ export class SanctuarySocketClient {
       const raw = localStorage.getItem(FALLBACK_CHAT_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          this.listeners.onChatInit(parsed as ChatMessage[]);
+        if (Array.isArray(parsed)) {
+          const realMessages = (parsed as ChatMessage[]).filter(
+            (m) => m && !String(m.id || '').startsWith('chat-seed-'),
+          );
+          this.listeners.onChatInit(realMessages);
           return;
         }
       }

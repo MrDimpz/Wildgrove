@@ -263,6 +263,12 @@ class CozySoundEngine {
     this.playTone(1318.51, 0.22, 'sine', 0.11, 0.07);
   }
 
+  public playChatNotification(): void {
+    // Gentle two-note wooden bell chime for incoming chat messages
+    this.playTone(783.99, 0.11, 'sine', 0.085, 0);
+    this.playTone(1046.5, 0.18, 'triangle', 0.095, 0.075);
+  }
+
   public playError(): void {
     this.playTone(220, 0.16, 'sawtooth', 0.06, 0, 165);
   }

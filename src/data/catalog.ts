@@ -297,6 +297,13 @@ export function ensureEnclosureHistory(enc: EnclosureItem): EnclosureItem {
   };
 }
 
+export const GENERATED_GROVE_CODES = new Set([
+  'GROVE-LUNA',
+  'GROVE-FERN',
+  'GROVE-IRIS',
+  'GROVE-OAK7',
+]);
+
 export function normalizeSanctuaryState(state: SanctuaryState): SanctuaryState {
   const validGridSize = state.gridSize === 24 ? 24 : state.gridSize === 18 ? 18 : DEFAULT_GRID_SIZE;
   const today = todayDateString();
@@ -362,7 +369,9 @@ export function normalizeSanctuaryState(state: SanctuaryState): SanctuaryState {
     storageCrate: Array.isArray(state.storageCrate) ? state.storageCrate : [],
     dailyQuests: existingQuests,
     dailyForaging: existingForaging,
-    savedFriends: Array.isArray(state.savedFriends) ? state.savedFriends : [],
+    savedFriends: Array.isArray(state.savedFriends)
+      ? state.savedFriends.filter((code) => !GENERATED_GROVE_CODES.has(code))
+      : [],
     guestbook: Array.isArray(state.guestbook) ? state.guestbook : [],
     blueprints: Array.isArray(state.blueprints) ? state.blueprints : [],
     lastIdleCollectedAt:
@@ -1507,16 +1516,8 @@ export function createStarterSanctuary(
       claimedMilestones: [],
     },
     unlockedAchievements: [],
-    savedFriends: ['GROVE-LUNA', 'GROVE-IRIS'],
-    guestbook: [
-      {
-        id: 'gb-welcome',
-        authorName: 'Maren',
-        authorCode: 'GROVE-LUNA',
-        message: 'Welcome to Wildgrove! Lovely sunlit meadow—stop by Silverpine Haven anytime!',
-        timestamp: now - 300_000,
-      },
-    ],
+    savedFriends: [],
+    guestbook: [],
     blueprints: [],
     lastIdleCollectedAt: now,
     stats: {

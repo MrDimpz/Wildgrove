@@ -4,14 +4,17 @@ import {
   ClipboardList,
   Gift,
   Hammer,
+  Hand,
   MessageCircle,
   Move,
+  RotateCw,
   Sprout,
   Store,
   Trophy,
   Users,
 } from 'lucide-react';
 import type { ActiveDrawer } from '../types/game';
+import type { TouchDragMode } from '../three/SanctuaryEngine';
 
 interface BottomDockProps {
   activeDrawer: ActiveDrawer;
@@ -24,6 +27,8 @@ interface BottomDockProps {
   hasReadyCare?: boolean;
   unreadChatCount: number;
   visitingMode: boolean;
+  touchDragMode: TouchDragMode;
+  onChangeTouchDragMode: (mode: TouchDragMode) => void;
 }
 
 const DOCK_ITEMS: Array<{
@@ -53,32 +58,79 @@ export function BottomDock({
   hasReadyCare,
   unreadChatCount,
   visitingMode,
+  touchDragMode,
+  onChangeTouchDragMode,
 }: BottomDockProps) {
   return (
     <div
       className={`fixed bottom-0 pb-2.5 sm:pb-4 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center transition-transform duration-200 w-[calc(100vw-20px)] max-w-[420px] sm:w-auto sm:max-w-[95vw] ${
-        collapsed ? 'translate-y-[calc(100%-30px)]' : 'translate-y-0'
+        collapsed ? 'translate-y-[calc(100%-38px)] sm:translate-y-[calc(100%-30px)]' : 'translate-y-0'
       }`}
     >
-      {/* Collapsible Pull-Up / Hide Toggle Tab */}
-      <button
-        type="button"
-        onClick={onToggleCollapse}
-        className="inline-flex items-center gap-1 h-[30px] px-3.5 rounded-t-xl bg-[#FAF6EE] border border-b-0 border-[#263129]/15 text-[11px] font-semibold text-[#4B5B4E] hover:text-[#233026] cursor-pointer shadow-sm"
-        title="Toggle Control Dock (H)"
-      >
-        {collapsed ? (
-          <>
-            <ChevronUp className="w-3.5 h-3.5" />
-            <span>Show Dock</span>
-          </>
-        ) : (
-          <>
-            <ChevronDown className="w-3.5 h-3.5" />
-            <span>Hide Dock</span>
-          </>
-        )}
-      </button>
+      {/* Top Row above Dock: Hide/Show Tab + Mobile Right-Side Scroll/Rotate Toggle */}
+      <div className="w-full relative flex items-end justify-start pl-2 min-[390px]:justify-center min-[390px]:pl-0 sm:justify-center h-[38px] sm:h-[30px]">
+        {/* Collapsible Pull-Up / Hide Toggle Tab */}
+        <button
+          type="button"
+          onClick={onToggleCollapse}
+          className="inline-flex items-center gap-1 h-[30px] px-3.5 rounded-t-xl bg-[#FAF6EE] border border-b-0 border-[#263129]/15 text-[11px] font-semibold text-[#4B5B4E] hover:text-[#233026] cursor-pointer shadow-sm"
+          title="Toggle Control Dock (H)"
+        >
+          {collapsed ? (
+            <>
+              <ChevronUp className="w-3.5 h-3.5" />
+              <span>Show Dock</span>
+              {unreadChatCount > 0 && (
+                <span className="ml-1 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-[#D4622A] text-white text-[10px] font-mono-num font-bold leading-none animate-pulse">
+                  <MessageCircle className="w-2.5 h-2.5" />
+                  {unreadChatCount > 99 ? '99+' : unreadChatCount}
+                </span>
+              )}
+            </>
+          ) : (
+            <>
+              <ChevronDown className="w-3.5 h-3.5" />
+              <span>Hide Dock</span>
+            </>
+          )}
+        </button>
+
+        {/* Mobile Finger-Drag Toggle: Scroll (Pan) vs Rotate */}
+        <div
+          role="group"
+          aria-label="Finger drag mode"
+          className="sm:hidden absolute right-0 bottom-1.5 inline-flex items-center p-0.5 rounded-xl bg-[#FAF6EE]/95 border border-[#263129]/15 shadow-sm backdrop-blur-sm"
+        >
+          <button
+            type="button"
+            onClick={() => onChangeTouchDragMode('pan')}
+            aria-pressed={touchDragMode === 'pan'}
+            className={`inline-flex items-center gap-1 h-[26px] px-2 rounded-lg text-[11px] font-semibold transition-colors cursor-pointer ${
+              touchDragMode === 'pan'
+                ? 'bg-[#2F6E49] text-[#FAF6EE] shadow-xs'
+                : 'text-[#4B5B4E] hover:text-[#233026]'
+            }`}
+            title="Finger drag scrolls around the sanctuary"
+          >
+            <Hand className="w-3.5 h-3.5 shrink-0" />
+            {touchDragMode === 'pan' && <span>Scroll</span>}
+          </button>
+          <button
+            type="button"
+            onClick={() => onChangeTouchDragMode('rotate')}
+            aria-pressed={touchDragMode === 'rotate'}
+            className={`inline-flex items-center gap-1 h-[26px] px-2 rounded-lg text-[11px] font-semibold transition-colors cursor-pointer ${
+              touchDragMode === 'rotate'
+                ? 'bg-[#C46B33] text-[#FAF6EE] shadow-xs'
+                : 'text-[#4B5B4E] hover:text-[#233026]'
+            }`}
+            title="Finger drag rotates the camera"
+          >
+            <RotateCw className="w-3.5 h-3.5 shrink-0" />
+            {touchDragMode === 'rotate' && <span>Rotate</span>}
+          </button>
+        </div>
+      </div>
 
       {/* Mobile: Full 3x3 Pull-Up Grid (all 9 options visible) | Desktop: Single Horizontal Bar */}
       <nav
@@ -146,14 +198,17 @@ export function BottomDock({
               }`}
             >
               <Icon className="w-4 h-4 shrink-0" />
-              <span className="inline-flex items-center gap-0.5">
+              <span className="inline-flex items-center gap-1">
                 {item.label}
-                {showBadgeCount && (
-                  <span className="text-[10px] font-mono-num font-bold text-[#D4622A]">
-                    {item.id === 'chat' ? `(${unreadChatCount})` : '•'}
-                  </span>
+                {showBadgeCount && item.id !== 'chat' && (
+                  <span className="text-[10px] font-mono-num font-bold text-[#D4622A]">•</span>
                 )}
               </span>
+              {item.id === 'chat' && unreadChatCount > 0 && (
+                <span className="absolute -top-1 -right-1 sm:static min-w-[18px] h-[18px] px-1 rounded-full bg-[#D4622A] text-white text-[10px] font-mono-num font-bold inline-flex items-center justify-center shadow-sm">
+                  {unreadChatCount > 99 ? '99+' : unreadChatCount}
+                </span>
+              )}
             </button>
           );
         })}

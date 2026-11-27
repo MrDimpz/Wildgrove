@@ -4,7 +4,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, MessageCircle, X } from 'lucide-react';
 import type {
   ActiveDrawer,
   ChatMessage,
@@ -50,7 +50,11 @@ import {
   todayDateString,
   xpRequiredForLevel,
 } from './data/catalog';
-import { SanctuaryEngine, type PhotoCameraPreset } from './three/SanctuaryEngine';
+import {
+  SanctuaryEngine,
+  type PhotoCameraPreset,
+  type TouchDragMode,
+} from './three/SanctuaryEngine';
 import { soundEngine } from './audio/soundEngine';
 import {
   SanctuarySocketClient,
@@ -76,6 +80,7 @@ import { EnclosureModal } from './components/EnclosureModal';
 import { DrawerModals, type TerrainThemeId } from './components/DrawerModals';
 import { PhotoModeOverlay } from './components/PhotoModeOverlay';
 import { CircusMiniGamesModal, type MiniGameRewardPayload } from './components/CircusMiniGamesModal';
+import { SpeciesIcon } from './components/SpeciesIcon';
 
 function applyProgressionAndAchievements(state: SanctuaryState, gainedXp: number): {
   next: SanctuaryState;
@@ -168,6 +173,14 @@ export default function App() {
   const [visitingSanctuary, setVisitingSanctuary] = useState<SanctuaryState | null>(null);
   const [activeDrawer, setActiveDrawer] = useState<ActiveDrawer>(null);
   const [dockCollapsed, setDockCollapsed] = useState(false);
+  const [touchDragMode, setTouchDragMode] = useState<TouchDragMode>(() => {
+    try {
+      const saved = localStorage.getItem('wildgrove_touch_drag_mode_v1');
+      return saved === 'rotate' ? 'rotate' : 'pan';
+    } catch {
+      return 'pan';
+    }
+  });
   const [selectedEnclosureId, setSelectedEnclosureId] = useState<string | null>(null);
   const [showCircusModal, setShowCircusModal] = useState(false);
   const [placementChoice, setPlacementChoice] = useState<PlacementChoice | null>(null);
@@ -197,6 +210,24 @@ export default function App() {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [onlineCount, setOnlineCount] = useState(1);
   const [unreadChatCount, setUnreadChatCount] = useState(0);
+  const [chatNotificationsEnabled, setChatNotificationsEnabled] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('wildgrove_chat_notifs_v1');
+      return saved === null ? true : saved !== 'false';
+    } catch {
+      return true;
+    }
+  });
+  const [browserNotifPermission, setBrowserNotifPermission] = useState<
+    NotificationPermission | 'unsupported'
+  >(() =>
+    typeof window !== 'undefined' && 'Notification' in window
+      ? window.Notification.permission
+      : 'unsupported',
+  );
+  const [chatNotifications, setChatNotifications] = useState<
+    Array<{ id: string; message: ChatMessage }>
+  >([]);
 
   // Transient floating toast notifications
   const [toasts, setToasts] = useState<FloatingFeedback[]>([]);
@@ -204,6 +235,7 @@ export default function App() {
   const canvasMountRef = useRef<HTMLDivElement | null>(null);
   const engineRef = useRef<SanctuaryEngine | null>(null);
   const socketRef = useRef<SanctuarySocketClient | null>(null);
+  const seenChatIdsRef = useRef<Set<string>>(new Set());
 
   // Refs for stable callbacks inside the WebGL engine without re-mounting
   const sanctuaryRef = useRef(sanctuary);
@@ -220,6 +252,53 @@ export default function App() {
   activeDrawerRef.current = activeDrawer;
   const photoModeRef = useRef(photoMode);
   photoModeRef.current = photoMode;
+  const chatNotifsEnabledRef = useRef(chatNotificationsEnabled);
+  chatNotifsEnabledRef.current = chatNotificationsEnabled;
+
+  // Reflect unread chat count in browser tab title
+  useEffect(() => {
+    const baseTitle = 'Wildgrove Sanctuary — 3D Isometric Animal Sanctuary';
+    document.title = unreadChatCount > 0 ? `(${unreadChatCount}) ${baseTitle}` : baseTitle;
+    return () => {
+      document.title = baseTitle;
+    };
+  }, [unreadChatCount]);
+
+  const handleToggleChatNotifications = useCallback(() => {
+    soundEngine.playClick();
+    setChatNotificationsEnabled((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('wildgrove_chat_notifs_v1', String(next));
+      } catch {
+        // Ignore storage errors
+      }
+      if (!next) {
+        setChatNotifications([]);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleRequestBrowserNotif = useCallback(() => {
+    if (typeof window === 'undefined' || !('Notification' in window)) return;
+    soundEngine.playClick();
+    void window.Notification.requestPermission().then((perm) => {
+      setBrowserNotifPermission(perm);
+    });
+  }, []);
+
+  const dismissChatNotification = useCallback((id: string) => {
+    setChatNotifications((prev) => prev.filter((item) => item.id !== id));
+  }, []);
+
+  const pushChatNotification = useCallback((msg: ChatMessage) => {
+    const notifId = `chat-notif-${msg.id}-${Date.now()}`;
+    setChatNotifications((prev) => [...prev.slice(-1), { id: notifId, message: msg }]);
+    window.setTimeout(() => {
+      setChatNotifications((prev) => prev.filter((item) => item.id !== notifId));
+    }, 6000);
+  }, []);
 
   const pushToast = useCallback((text: string, tone: FloatingFeedback['tone'] = 'emerald') => {
     const id = `${Date.now()}-${Math.random()}`;
@@ -1084,6 +1163,29 @@ export default function App() {
     engineRef.current?.setEditState(editMode, movingItem);
   }, [editMode, movingItem]);
 
+  useEffect(() => {
+    engineRef.current?.setTouchDragMode(touchDragMode);
+  }, [touchDragMode]);
+
+  const handleChangeTouchDragMode = useCallback(
+    (mode: TouchDragMode) => {
+      if (mode === touchDragMode) return;
+      soundEngine.playClick();
+      setTouchDragMode(mode);
+      engineRef.current?.setTouchDragMode(mode);
+      try {
+        localStorage.setItem('wildgrove_touch_drag_mode_v1', mode);
+      } catch {
+        // Ignore storage errors
+      }
+      pushToast(
+        mode === 'pan' ? 'Finger drag: Scroll sanctuary' : 'Finger drag: Rotate camera',
+        'sky',
+      );
+    },
+    [touchDragMode, pushToast],
+  );
+
   // --- Photo Mode & Time-of-Day Handlers ---
   const handleChangeTimeOfDay = useCallback(
     (nextTod: TimeOfDayId) => {
@@ -1234,13 +1336,47 @@ export default function App() {
   useEffect(() => {
     const client = new SanctuarySocketClient({
       onPresence: (count) => setOnlineCount(Math.max(1, count)),
-      onChatInit: (msgs) => setChatMessages(msgs),
+      onChatInit: (msgs) => {
+        msgs.forEach((m) => seenChatIdsRef.current.add(m.id));
+        setChatMessages(msgs);
+      },
       onChatMessage: (msg) => {
+        if (seenChatIdsRef.current.has(msg.id)) return;
+        seenChatIdsRef.current.add(msg.id);
         setChatMessages((prev) =>
           prev.some((c) => c.id === msg.id) ? prev : [...prev.slice(-79), msg],
         );
         if (activeDrawerRef.current !== 'chat' && msg.senderCode !== sanctuaryRef.current.syncCode) {
           setUnreadChatCount((c) => c + 1);
+          if (chatNotifsEnabledRef.current) {
+            soundEngine.playChatNotification();
+            pushChatNotification(msg);
+            if (
+              typeof window !== 'undefined' &&
+              'Notification' in window &&
+              document.hidden &&
+              window.Notification.permission === 'granted'
+            ) {
+              try {
+                const browserNotif = new window.Notification(
+                  `${msg.senderName} · Wildgrove Chat`,
+                  {
+                    body: msg.text,
+                    tag: 'wildgrove-chat',
+                  },
+                );
+                browserNotif.onclick = () => {
+                  window.focus();
+                  setUnreadChatCount(0);
+                  setChatNotifications([]);
+                  setActiveDrawer('chat');
+                  browserNotif.close();
+                };
+              } catch {
+                // Ignore browser notification errors in restricted iframes
+              }
+            }
+          }
         }
       },
       onMarketplaceUpdate: (list) => setListings(list),
@@ -1262,7 +1398,7 @@ export default function App() {
         fetchDirectTrades(sanctuaryRef.current.syncCode),
       ]);
       if (mkt.length) setListings(mkt);
-      if (friends.length) setCommunitySanctuaries(friends);
+      setCommunitySanctuaries(friends);
       if (lb.length) setLeaderboard(lb);
       if (trades.length) setDirectTrades(trades);
     })();
@@ -1271,7 +1407,7 @@ export default function App() {
       client.dispose();
       socketRef.current = null;
     };
-  }, [pushToast]);
+  }, [pushToast, pushChatNotification]);
 
   // --- Animal Rename & Bio Editor ---
   const handleUpdateAnimalDetails = (enclosureId: string, name: string, bio: string) => {
@@ -2149,7 +2285,10 @@ export default function App() {
       setEditMode(false);
       setMovingItem(null);
     }
-    if (drawer === 'chat') setUnreadChatCount(0);
+    if (drawer === 'chat') {
+      setUnreadChatCount(0);
+      setChatNotifications([]);
+    }
     if (drawer === 'market') {
       void fetchMarketplaceListings().then(setListings);
       void fetchDirectTrades(sanctuary.syncCode).then(setDirectTrades);
@@ -2338,6 +2477,8 @@ export default function App() {
                 hasReadyCare={hasReadyCare}
                 unreadChatCount={unreadChatCount}
                 visitingMode={Boolean(visitingSanctuary)}
+                touchDragMode={touchDragMode}
+                onChangeTouchDragMode={handleChangeTouchDragMode}
               />
             </>
           )}
@@ -2359,6 +2500,58 @@ export default function App() {
                   }`}
                 >
                   {t.text}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Live Interactive Chat Notification Popups */}
+          {!photoMode && chatNotifications.length > 0 && activeDrawer !== 'chat' && (
+            <div className="fixed top-[106px] sm:top-20 right-3 sm:right-5 left-3 sm:left-auto z-30 flex flex-col gap-2 sm:w-80 pointer-events-none">
+              {chatNotifications.map(({ id, message }) => (
+                <div
+                  key={id}
+                  className="pointer-events-auto flex items-start gap-2.5 p-3 rounded-2xl bg-[#FAF6EE]/95 backdrop-blur-md border border-[#2F6E49]/25 shadow-[0_12px_32px_rgba(24,38,26,0.22)]"
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      dismissChatNotification(id);
+                      handleOpenDrawer('chat');
+                    }}
+                    className="flex items-start gap-2.5 flex-1 min-w-0 text-left cursor-pointer group"
+                  >
+                    <div className="w-9 h-9 rounded-xl bg-[#E9F2EC] border border-[#2F6E49]/20 flex items-center justify-center shrink-0 relative">
+                      <SpeciesIcon species={message.avatarSpecies} className="w-6 h-6" />
+                      <span className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-[#D4622A] text-white flex items-center justify-center">
+                        <MessageCircle className="w-2.5 h-2.5" />
+                      </span>
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-bold text-[#233026] truncate group-hover:text-[#2F6E49]">
+                          {message.senderName}
+                        </span>
+                        <span className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-md bg-[#E9F2EC] text-[#2F6E49]">
+                          {message.tag && message.tag !== 'general' ? message.tag : 'chat'}
+                        </span>
+                      </div>
+                      <p className="text-xs text-[#3C4B3F] line-clamp-2 break-words mt-0.5">
+                        {message.text}
+                      </p>
+                      <span className="text-[10px] font-semibold text-[#2F6E49] mt-1 inline-block">
+                        Tap to open chat
+                      </span>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => dismissChatNotification(id)}
+                    className="p-1 rounded-lg text-[#6B7A6E] hover:text-[#233026] hover:bg-[#EFE7D8] cursor-pointer shrink-0"
+                    aria-label="Dismiss chat notification"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               ))}
             </div>
@@ -2469,6 +2662,10 @@ export default function App() {
               chatMessages={chatMessages}
               onlineCount={onlineCount}
               onSendChat={handleSendChat}
+              chatNotificationsEnabled={chatNotificationsEnabled}
+              onToggleChatNotifications={handleToggleChatNotifications}
+              browserNotifPermission={browserNotifPermission}
+              onRequestBrowserNotif={handleRequestBrowserNotif}
               onUpdateProfile={(keeperName, sanctuaryName, avatarSpecies) => {
                 updateSanctuary((prev) => ({
                   ...prev,

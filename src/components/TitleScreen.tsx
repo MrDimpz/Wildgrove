@@ -32,7 +32,7 @@ export function TitleScreen({ existingSyncCode, onStart, onLoadSyncCode }: Title
     const ok = await onLoadSyncCode(restoreCode.trim());
     setLoadingCode(false);
     if (!ok) {
-      setRestoreError('No sanctuary found for that code. Try GROVE-LUNA or check your Sync Code.');
+      setRestoreError('No sanctuary found for that code. Double-check your Sync Code and try again.');
     }
   };
 

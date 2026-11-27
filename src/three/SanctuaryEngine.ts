@@ -31,6 +31,7 @@ import {
 } from './cartoonStyle';
 
 export type PhotoCameraPreset = 'iso' | 'scenic' | 'top' | 'orbit';
+export type TouchDragMode = 'pan' | 'rotate';
 
 export interface EngineCallbacks {
   onSelectEnclosure: (enclosureId: string) => void;
@@ -205,6 +206,7 @@ export class SanctuaryEngine {
     this.controls.maxPolarAngle = Math.PI * 0.41;
     this.controls.screenSpacePanning = false;
     this.controls.target.set(0, 0.5, 0);
+    this.setTouchDragMode('pan');
     this.applyResponsiveControlSpeeds();
     this.controls.addEventListener('start', () => {
       // Cancel scripted camera glide immediately when user drags
@@ -347,6 +349,13 @@ export class SanctuaryEngine {
     }
   }
 
+  public setTouchDragMode(mode: TouchDragMode): void {
+    this.controls.touches = {
+      ONE: mode === 'pan' ? THREE.TOUCH.PAN : THREE.TOUCH.ROTATE,
+      TWO: THREE.TOUCH.DOLLY_PAN,
+    };
+  }
+
   private applyResponsiveControlSpeeds(): void {
     const isMobileView =
       typeof window !== 'undefined' &&
@@ -355,6 +364,7 @@ export class SanctuaryEngine {
     const speed = isMobileView ? 0.75 : 1.0;
     this.controls.rotateSpeed = speed;
     this.controls.zoomSpeed = speed;
+    this.controls.panSpeed = isMobileView ? 1.15 : 1.0;
   }
 
   private syncBuildCameraMode(): void {

@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Archive,
+  Bell,
+  BellOff,
   BookMarked,
   Check,
   ChefHat,
@@ -57,6 +59,7 @@ import {
   DAILY_REWARDS,
   DECOR_CATALOG,
   DEFAULT_GRID_SIZE,
+  GENERATED_GROVE_CODES,
   MAX_GRID_SIZE,
   getDecorFootprint,
   PLOT_EXPANSIONS,
@@ -141,6 +144,10 @@ interface DrawerModalsProps {
   chatMessages: ChatMessage[];
   onlineCount: number;
   onSendChat: (text: string, tag: 'general' | 'trade' | 'visit' | 'milestone') => void;
+  chatNotificationsEnabled: boolean;
+  onToggleChatNotifications: () => void;
+  browserNotifPermission: NotificationPermission | 'unsupported';
+  onRequestBrowserNotif: () => void;
   // Cloud Sync
   onUpdateProfile: (keeperName: string, sanctuaryName: string, avatarSpecies: SpeciesId) => void;
   onSyncNow: () => Promise<boolean>;
@@ -203,6 +210,10 @@ export function DrawerModals({
   chatMessages,
   onlineCount,
   onSendChat,
+  chatNotificationsEnabled,
+  onToggleChatNotifications,
+  browserNotifPermission,
+  onRequestBrowserNotif,
   onUpdateProfile,
   onSyncNow,
   onLoadSyncCode,
@@ -248,6 +259,15 @@ export function DrawerModals({
   // Chat state
   const [chatText, setChatText] = useState('');
   const [chatTag, setChatTag] = useState<'general' | 'trade' | 'visit'>('general');
+  const chatScrollRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (activeDrawer !== 'chat') return;
+    const el = chatScrollRef.current;
+    if (el) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [activeDrawer, chatMessages.length]);
 
   // Profile & Sync state
   const [keeperInput, setKeeperInput] = useState(sanctuary.keeperName);
@@ -1367,7 +1387,7 @@ export function DrawerModals({
                           type="text"
                           value={directToCode}
                           onChange={(e) => setDirectToCode(e.target.value.toUpperCase())}
-                          placeholder="e.g. GROVE-LUNA"
+                          placeholder="e.g. GROVE-XXXX"
                           className="w-full px-3 py-2 rounded-xl bg-white border border-[#263129]/15 text-xs font-mono-num"
                         />
                         {savedFriends.length > 0 && (
@@ -1580,80 +1600,97 @@ export function DrawerModals({
               </div>
 
               {/* Community & Pinned Sanctuaries */}
-              <div className="space-y-2.5">
-                <div className="text-xs font-semibold text-[#546457]">
-                  Sanctuary Directory ({savedFriends.length} Pinned)
-                </div>
-                {[...communitySanctuaries]
-                  .filter((s) => s.syncCode !== sanctuary.syncCode)
+              {(() => {
+                const realFriends = [...communitySanctuaries]
+                  .filter((s) => s.syncCode !== sanctuary.syncCode && !GENERATED_GROVE_CODES.has(s.syncCode))
                   .sort((a, b) => {
                     const aPin = savedFriends.includes(a.syncCode) ? 1 : 0;
                     const bPin = savedFriends.includes(b.syncCode) ? 1 : 0;
                     return bPin - aPin || b.prestige - a.prestige;
-                  })
-                  .map((friend) => {
-                    const pinned = savedFriends.includes(friend.syncCode);
-                    return (
-                      <div
-                        key={friend.syncCode}
-                        className={`p-3.5 rounded-2xl border flex items-center justify-between gap-3 ${
-                          pinned
-                            ? 'bg-[#FDF6E7] border-[#C9851E]/30'
-                            : 'bg-[#F3ECE0] border-[#263129]/10'
-                        }`}
-                      >
-                        <div className="flex items-center gap-3 min-w-0">
-                          <div className="w-10 h-10 rounded-xl bg-[#FAF6EE] flex items-center justify-center shrink-0">
-                            <SpeciesIcon species={friend.avatarSpecies} className="w-7 h-7" />
-                          </div>
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-sm font-semibold text-[#233026] truncate">
-                                {friend.sanctuaryName}
-                              </span>
-                              <span className="text-[10px] font-mono-num text-[#6B7A6E]">
-                                {friend.syncCode}
-                              </span>
-                            </div>
-                            <div className="text-xs text-[#5A6B5C]">
-                              {friend.keeperName} · Lv.{friend.level} · {friend.animalCount} animals ·{' '}
-                              <span className="font-mono-num">
-                                {friend.prestige.toLocaleString()}
-                              </span>{' '}
-                              Prestige
-                            </div>
-                          </div>
-                        </div>
+                  });
+                const pinnedCount = savedFriends.filter((c) => !GENERATED_GROVE_CODES.has(c)).length;
 
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => onTogglePinFriend(friend.syncCode)}
-                            className={`p-2 rounded-xl border cursor-pointer ${
-                              pinned
-                                ? 'bg-[#FDF1D6] border-[#C9851E]/40 text-[#C9851E]'
-                                : 'bg-[#FAF6EE] border-[#263129]/12 text-[#6B7A6E] hover:text-[#C9851E]'
-                            }`}
-                            title={pinned ? 'Unpin friend' : 'Pin friend'}
-                          >
-                            <Star className={`w-4 h-4 ${pinned ? 'fill-current' : ''}`} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              onVisitSanctuary(friend.syncCode);
-                              onClose();
-                            }}
-                            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#2F6E49] hover:bg-[#25593B] text-white text-xs font-semibold cursor-pointer whitespace-nowrap"
-                          >
-                            <Users className="w-3.5 h-3.5" />
-                            Visit 3D
-                          </button>
+                return (
+                  <div className="space-y-2.5">
+                    <div className="text-xs font-semibold text-[#546457]">
+                      Player Sanctuaries ({pinnedCount} Pinned)
+                    </div>
+                    {realFriends.length === 0 ? (
+                      <div className="p-4 rounded-2xl bg-[#F3ECE0] border border-[#263129]/10 text-center space-y-1.5">
+                        <div className="text-sm font-semibold text-[#233026]">
+                          No Player Friends Yet
                         </div>
+                        <p className="text-xs text-[#5A6B5C] leading-relaxed">
+                          Share your Sync Code (<span className="font-mono-num font-bold text-[#2F6E49]">{sanctuary.syncCode}</span>) with friends or enter their code above to pin and visit real players&apos; sanctuaries.
+                        </p>
                       </div>
-                    );
-                  })}
-              </div>
+                    ) : (
+                      realFriends.map((friend) => {
+                        const pinned = savedFriends.includes(friend.syncCode);
+                        return (
+                          <div
+                            key={friend.syncCode}
+                            className={`p-3.5 rounded-2xl border flex items-center justify-between gap-3 ${
+                              pinned
+                                ? 'bg-[#FDF6E7] border-[#C9851E]/30'
+                                : 'bg-[#F3ECE0] border-[#263129]/10'
+                            }`}
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="w-10 h-10 rounded-xl bg-[#FAF6EE] flex items-center justify-center shrink-0">
+                                <SpeciesIcon species={friend.avatarSpecies} className="w-7 h-7" />
+                              </div>
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-sm font-semibold text-[#233026] truncate">
+                                    {friend.sanctuaryName}
+                                  </span>
+                                  <span className="text-[10px] font-mono-num text-[#6B7A6E]">
+                                    {friend.syncCode}
+                                  </span>
+                                </div>
+                                <div className="text-xs text-[#5A6B5C]">
+                                  {friend.keeperName} · Lv.{friend.level} · {friend.animalCount} animals ·{' '}
+                                  <span className="font-mono-num">
+                                    {friend.prestige.toLocaleString()}
+                                  </span>{' '}
+                                  Prestige
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => onTogglePinFriend(friend.syncCode)}
+                                className={`p-2 rounded-xl border cursor-pointer ${
+                                  pinned
+                                    ? 'bg-[#FDF1D6] border-[#C9851E]/40 text-[#C9851E]'
+                                    : 'bg-[#FAF6EE] border-[#263129]/12 text-[#6B7A6E] hover:text-[#C9851E]'
+                                }`}
+                                title={pinned ? 'Unpin friend' : 'Pin friend'}
+                              >
+                                <Star className={`w-4 h-4 ${pinned ? 'fill-current' : ''}`} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  onVisitSanctuary(friend.syncCode);
+                                  onClose();
+                                }}
+                                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#2F6E49] hover:bg-[#25593B] text-white text-xs font-semibold cursor-pointer whitespace-nowrap"
+                              >
+                                <Users className="w-3.5 h-3.5" />
+                                Visit 3D
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* Sanctuary Visitor Guestbook */}
               <div className="pt-2 border-t border-[#263129]/10 space-y-2.5">
@@ -1888,34 +1925,78 @@ export function DrawerModals({
           {/* ==================== REAL-TIME COMMUNITY CHAT ==================== */}
           {activeDrawer === 'chat' && (
             <div className="flex flex-col gap-3 h-[54vh]">
-              <div className="flex items-center justify-between text-xs text-[#546457]">
-                <span>Real-time WebSocket chat across all connected keepers</span>
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[#546457]">
                 <span className="font-mono-num font-semibold text-[#2F6E49]">
-                  {onlineCount} Keepers Online
+                  {onlineCount} {onlineCount === 1 ? 'Keeper' : 'Keepers'} Online
                 </span>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={onToggleChatNotifications}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[11px] font-semibold cursor-pointer transition-colors ${
+                      chatNotificationsEnabled
+                        ? 'bg-[#E9F2EC] border-[#2F6E49]/30 text-[#235437]'
+                        : 'bg-[#F3ECE0] border-[#263129]/15 text-[#6B7A6E]'
+                    }`}
+                    title="Toggle live chat popups and notification chime"
+                  >
+                    {chatNotificationsEnabled ? (
+                      <>
+                        <Bell className="w-3.5 h-3.5 text-[#2F6E49]" />
+                        <span>Alerts On</span>
+                      </>
+                    ) : (
+                      <>
+                        <BellOff className="w-3.5 h-3.5" />
+                        <span>Alerts Muted</span>
+                      </>
+                    )}
+                  </button>
+                  {browserNotifPermission === 'default' && chatNotificationsEnabled && (
+                    <button
+                      type="button"
+                      onClick={onRequestBrowserNotif}
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-[#FDF1D6] hover:bg-[#F8E5BE] border border-[#C9851E]/35 text-[#6E4510] text-[11px] font-semibold cursor-pointer transition-colors"
+                      title="Enable browser desktop alerts when this tab is in the background"
+                    >
+                      <Bell className="w-3 h-3" />
+                      <span>Enable Browser Alerts</span>
+                    </button>
+                  )}
+                </div>
               </div>
 
-              <div className="flex-1 overflow-y-auto sanctuary-scroll space-y-2.5 bg-[#F3ECE0] rounded-2xl p-3.5 border border-[#263129]/10">
-                {chatMessages.map((m) => (
-                  <div key={m.id} className="flex items-start gap-2.5">
-                    <div className="w-7 h-7 rounded-lg bg-[#FAF6EE] flex items-center justify-center shrink-0 mt-0.5">
-                      <SpeciesIcon species={m.avatarSpecies} className="w-5 h-5" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 text-xs">
-                        <span className="font-semibold text-[#233026]">{m.senderName}</span>
-                        <span className="text-[#6B7A6E]">
-                          {m.tag && m.tag !== 'general' ? m.tag : 'keeper'} ·{' '}
-                          {new Date(m.timestamp).toLocaleTimeString([], {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
-                        </span>
-                      </div>
-                      <p className="text-sm text-[#2C3A2F] break-words">{m.text}</p>
-                    </div>
+              <div
+                ref={chatScrollRef}
+                className="flex-1 overflow-y-auto sanctuary-scroll space-y-2.5 bg-[#F3ECE0] rounded-2xl p-3.5 border border-[#263129]/10"
+              >
+                {chatMessages.length === 0 ? (
+                  <div className="h-full flex flex-col items-center justify-center text-center px-4 py-8 text-xs text-[#5A6B5C] space-y-1">
+                    <span className="font-semibold text-[#233026] text-sm">Community Chat is quiet</span>
+                    <span>Say hello, share a trade offer, or invite fellow keepers to visit your sanctuary!</span>
                   </div>
-                ))}
+                ) : (
+                  chatMessages.map((m) => (
+                    <div key={m.id} className="flex items-start gap-2.5">
+                      <div className="w-7 h-7 rounded-lg bg-[#FAF6EE] flex items-center justify-center shrink-0 mt-0.5">
+                        <SpeciesIcon species={m.avatarSpecies} className="w-5 h-5" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 text-xs">
+                          <span className="font-semibold text-[#233026]">{m.senderName}</span>
+                          <span className="text-[#6B7A6E]">
+                            {m.tag && m.tag !== 'general' ? m.tag : 'keeper'} ·{' '}
+                            {new Date(m.timestamp).toLocaleTimeString([], {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </span>
+                        </div>
+                        <p className="text-sm text-[#2C3A2F] break-words">{m.text}</p>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
 
               <form

@@ -76,7 +76,6 @@ import { EnclosureModal } from './components/EnclosureModal';
 import { DrawerModals, type TerrainThemeId } from './components/DrawerModals';
 import { PhotoModeOverlay } from './components/PhotoModeOverlay';
 import { CircusMiniGamesModal, type MiniGameRewardPayload } from './components/CircusMiniGamesModal';
-import { IntroVideoOverlay } from './components/IntroVideoOverlay';
 
 function applyProgressionAndAchievements(state: SanctuaryState, gainedXp: number): {
   next: SanctuaryState;
@@ -161,10 +160,7 @@ function findFirstOpenSpot(
 }
 
 export default function App() {
-  const [screen, setScreen] = useState<'intro' | 'title' | 'playing'>('intro');
-  const handleIntroComplete = useCallback(() => {
-    setScreen('title');
-  }, []);
+  const [screen, setScreen] = useState<'title' | 'playing'>('title');
   const [sanctuary, setSanctuary] = useState<SanctuaryState>(() => {
     const saved = loadLocalSanctuary();
     return saved ? normalizeSanctuaryState(saved) : createStarterSanctuary();
@@ -2229,11 +2225,6 @@ export default function App() {
     <div className="relative w-full h-full overflow-hidden bg-[#cce6f4]">
       {/* Isolated Full-Viewport 3D WebGL Canvas Mount */}
       <div ref={canvasMountRef} className="absolute inset-0 w-full h-full" />
-
-      {/* Opening Intro Cinematic Video */}
-      {screen === 'intro' && (
-        <IntroVideoOverlay onComplete={handleIntroComplete} />
-      )}
 
       {/* Title Screen */}
       {screen === 'title' && (

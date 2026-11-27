@@ -714,6 +714,9 @@ export class SanctuarySocketClient {
           } else if (data.type === 'chat:message' && data.message) {
             this.appendLocalChat(data.message);
             this.listeners.onChatMessage(data.message);
+          } else if (data.type === 'chat:sync' && Array.isArray(data.messages)) {
+            this.cacheChat(data.messages);
+            this.listeners.onChatInit(data.messages);
           } else if (data.type === 'marketplace:updated' && Array.isArray(data.listings)) {
             this.listeners.onMarketplaceUpdate(data.listings);
           } else if (data.type === 'leaderboard:updated' && Array.isArray(data.leaderboard)) {

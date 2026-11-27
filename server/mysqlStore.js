@@ -43,7 +43,7 @@ export class MysqlSanctuaryStore {
       maxIdle: 2,
       idleTimeout: 30000,
       queueLimit: 20,
-      connectTimeout: 8000,
+      connectTimeout: 4000,
       enableKeepAlive: true,
       charset: 'utf8mb4',
     };
@@ -81,8 +81,13 @@ export class MysqlSanctuaryStore {
     }
 
     const store = new MysqlSanctuaryStore(pool);
-    await store.ensureSchema();
-    return store;
+    try {
+      await store.ensureSchema();
+      return store;
+    } catch (err) {
+      await pool.end().catch(() => {});
+      throw err;
+    }
   }
 
   async ensureSchema() {
@@ -115,6 +120,14 @@ export class MysqlSanctuaryStore {
         payload TEXT NOT NULL,
         timestamp BIGINT NOT NULL,
         INDEX idx_wg_chat_timestamp (timestamp)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
+    await this.pool.execute(`
+      CREATE TABLE IF NOT EXISTS wg_admin_config (
+        config_key VARCHAR(64) NOT NULL PRIMARY KEY,
+        payload TEXT NOT NULL,
+        updated_at BIGINT NOT NULL
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
   }
@@ -234,6 +247,52 @@ export class MysqlSanctuaryStore {
       `INSERT IGNORE INTO wg_chat (id, sender_code, payload, timestamp)
        VALUES (?, ?, ?, ?)`,
       [message.id, message.senderCode, JSON.stringify(message), message.timestamp || Date.now()],
+    );
+  }
+
+  async deleteSanctuary(syncCode) {
+    await this.pool.execute('DELETE FROM wg_sanctuaries WHERE sync_code = ?', [syncCode]);
+  }
+
+  async deleteListingsBySeller(sellerCode) {
+    await this.pool.execute('DELETE FROM wg_marketplace WHERE seller_code = ?', [sellerCode]);
+  }
+
+  async deleteChat(chatId) {
+    await this.pool.execute('DELETE FROM wg_chat WHERE id = ?', [chatId]);
+  }
+
+  async clearSanctuaries() {
+    await this.pool.execute('DELETE FROM wg_sanctuaries');
+  }
+
+  async clearMarketplace() {
+    await this.pool.execute('DELETE FROM wg_marketplace');
+  }
+
+  async clearChat() {
+    await this.pool.execute('DELETE FROM wg_chat');
+  }
+
+  async getAdminConfig(configKey = 'auth') {
+    const [rows] = await this.pool.execute(
+      'SELECT payload FROM wg_admin_config WHERE config_key = ? LIMIT 1',
+      [configKey],
+    );
+    if (!rows.length) return null;
+    try {
+      return JSON.parse(rows[0].payload);
+    } catch {
+      return null;
+    }
+  }
+
+  async saveAdminConfig(configKey, value) {
+    await this.pool.execute(
+      `INSERT INTO wg_admin_config (config_key, payload, updated_at)
+       VALUES (?, ?, ?)
+       ON DUPLICATE KEY UPDATE payload = VALUES(payload), updated_at = VALUES(updated_at)`,
+      [configKey, JSON.stringify(value), Date.now()],
     );
   }
 

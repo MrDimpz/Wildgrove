@@ -10,6 +10,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { WebSocketServer, WebSocket } from 'ws';
 import { MysqlSanctuaryStore } from './mysqlStore.js';
+import { createAdminAuthManager } from './adminAuth.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -532,6 +533,7 @@ function loadDatabase() {
           }
         }
         if (!Array.isArray(parsed.directTrades)) parsed.directTrades = [];
+        if (!Array.isArray(parsed.adminAuditLog)) parsed.adminAuditLog = [];
         purgeGeneratedGroves(parsed);
         return parsed;
       }
@@ -544,6 +546,8 @@ function loadDatabase() {
     marketplace: buildSeedMarketplace(),
     chat: buildSeedChat(),
     directTrades: [],
+    adminAuth: null,
+    adminAuditLog: [],
   };
 }
 
@@ -617,20 +621,94 @@ function buildCommunitySummaries() {
 }
 
 export async function startServer() {
+  const serverStartedAt = Date.now();
   let mysqlStore = null;
   if (MysqlSanctuaryStore.hasConfig()) {
     try {
       mysqlStore = await MysqlSanctuaryStore.create();
       if (mysqlStore) {
-        db = await mysqlStore.loadAll(buildSeedSanctuaries(), buildSeedMarketplace(), buildSeedChat());
+        const loaded = await mysqlStore.loadAll(
+          buildSeedSanctuaries(),
+          buildSeedMarketplace(),
+          buildSeedChat(),
+        );
+        db = {
+          ...loaded,
+          directTrades: Array.isArray(db.directTrades) ? db.directTrades : [],
+          adminAuth: null,
+          adminAuditLog: [],
+        };
         purgeGeneratedGroves(db);
         console.log('Wildgrove Sanctuary connected to MySQL database (wg_* tables ready).');
       }
     } catch (err) {
-      console.warn('MySQL connection failed, falling back to local JSON store:', err?.code || err?.message || 'unknown error');
+      if (mysqlStore) {
+        await mysqlStore.close().catch(() => {});
+      }
+      const code = err?.code || err?.message || 'unreachable';
+      console.log(
+        `Wildgrove Sanctuary: MySQL unavailable (${code}); using local JSON store (data/sanctuary-db.json).`,
+      );
       mysqlStore = null;
     }
   }
+
+  const adminAuth = createAdminAuthManager({
+    getStoredAuth: async () => {
+      if (mysqlStore) {
+        try {
+          return await mysqlStore.getAdminConfig('auth');
+        } catch (err) {
+          console.warn('MySQL admin auth read error:', err?.code || err?.message);
+          return null;
+        }
+      }
+      return db.adminAuth || null;
+    },
+    saveStoredAuth: async (authRecord) => {
+      if (mysqlStore) {
+        await mysqlStore.saveAdminConfig('auth', authRecord);
+      } else {
+        db.adminAuth = authRecord;
+        flushDatabaseNow();
+      }
+    },
+  });
+
+  if (!Array.isArray(db.adminAuditLog)) db.adminAuditLog = [];
+  if (mysqlStore) {
+    try {
+      const savedLog = await mysqlStore.getAdminConfig('audit_log');
+      if (Array.isArray(savedLog)) {
+        db.adminAuditLog = savedLog.slice(0, 60);
+      }
+    } catch {
+      // Ignore optional audit load error
+    }
+  }
+
+  const recordAdminAudit = async (actor, action, detail) => {
+    const entry = {
+      id: `aud-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      timestamp: Date.now(),
+      actor: sanitizeText(actor, 32, 'Admin'),
+      action: sanitizeText(action, 48, 'action'),
+      detail: sanitizeText(detail, 180, ''),
+    };
+    if (!Array.isArray(db.adminAuditLog)) db.adminAuditLog = [];
+    db.adminAuditLog.unshift(entry);
+    db.adminAuditLog = db.adminAuditLog.slice(0, 60);
+    if (mysqlStore) {
+      try {
+        await mysqlStore.saveAdminConfig('audit_log', db.adminAuditLog);
+      } catch {
+        // Non-blocking audit persistence
+      }
+    } else {
+      persistDatabase();
+    }
+    return entry;
+  };
 
   const app = express();
   app.disable('x-powered-by');
@@ -1058,6 +1136,434 @@ export async function startServer() {
 
   app.get('/api/chat', (_req, res) => {
     return res.json({ messages: db.chat.slice(-50) });
+  });
+
+  // =========================================================================
+  // --- Backend Admin API (/api/admin/*) ---
+  // =========================================================================
+  app.use('/api/admin', (_req, res, next) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    next();
+  });
+
+  app.get('/api/admin/status', async (_req, res) => {
+    const status = await adminAuth.getStatus();
+    return res.json(status);
+  });
+
+  app.post('/api/admin/setup', async (req, res) => {
+    const { username, password } = req.body || {};
+    const result = await adminAuth.claimInitialAdmin(username, password);
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    await recordAdminAudit(result.username, 'admin.setup', 'Initial admin credentials configured on server');
+    return res.json({
+      ok: true,
+      token: result.token,
+      username: result.username,
+      authMode: 'claimed',
+      expiresAt: result.expiresAt,
+    });
+  });
+
+  app.post('/api/admin/login', async (req, res) => {
+    const { username, password } = req.body || {};
+    const result = await adminAuth.authenticate(req, username, password);
+    if (!result.ok) {
+      return res.status(result.status || 401).json({ error: result.error });
+    }
+    await recordAdminAudit(result.username, 'admin.login', 'Signed in to Admin Console');
+    return res.json({
+      ok: true,
+      token: result.token,
+      username: result.username,
+      authMode: result.authMode,
+      expiresAt: result.expiresAt,
+    });
+  });
+
+  app.post('/api/admin/logout', (req, res) => {
+    adminAuth.revokeBearerToken(req.headers.authorization);
+    return res.json({ ok: true });
+  });
+
+  app.get('/api/admin/session', adminAuth.requireAdminAuth, async (req, res) => {
+    const status = await adminAuth.getStatus();
+    return res.json({
+      ok: true,
+      username: req.adminUser.username,
+      authMode: status.authMode,
+      expiresAt: req.adminUser.expiresAt,
+    });
+  });
+
+  app.post('/api/admin/change-password', adminAuth.requireAdminAuth, async (req, res) => {
+    const { currentPassword, newPassword } = req.body || {};
+    const result = await adminAuth.rotatePassword(currentPassword, newPassword);
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    await recordAdminAudit(req.adminUser.username, 'admin.password_changed', 'Rotated admin password and refreshed sessions');
+    return res.json({
+      ok: true,
+      token: result.token,
+      username: result.username,
+      expiresAt: result.expiresAt,
+    });
+  });
+
+  app.get('/api/admin/overview', adminAuth.requireAdminAuth, async (_req, res) => {
+    const sanctuariesList = Object.values(db.sanctuaries || {}).filter(
+      (s) => s && !GENERATED_GROVE_CODES.has(s.syncCode),
+    );
+    let totalAnimals = 0;
+    let totalCrops = 0;
+    let totalDecorations = 0;
+    let totalCoins = 0;
+    let totalGems = 0;
+    for (const s of sanctuariesList) {
+      totalAnimals += Array.isArray(s.enclosures) ? s.enclosures.length : 0;
+      totalCrops += Array.isArray(s.crops) ? s.crops.length : 0;
+      totalDecorations += Array.isArray(s.decorations) ? s.decorations.length : 0;
+      totalCoins += Number(s.coins || 0);
+      totalGems += Number(s.gems || 0);
+    }
+    const status = await adminAuth.getStatus();
+    return res.json({
+      storage: mysqlStore ? 'mysql' : 'file',
+      authMode: status.authMode,
+      uptimeSec: Math.floor((Date.now() - serverStartedAt) / 1000),
+      onlineClients: wss.clients.size,
+      sanctuaryCount: sanctuariesList.length,
+      totalAnimals,
+      totalCrops,
+      totalDecorations,
+      totalCoins,
+      totalGems,
+      marketplaceCount: Array.isArray(db.marketplace) ? db.marketplace.length : 0,
+      directTradeCount: Array.isArray(db.directTrades)
+        ? db.directTrades.filter((t) => t && t.status === 'pending').length
+        : 0,
+      chatCount: Array.isArray(db.chat) ? db.chat.length : 0,
+      auditLog: Array.isArray(db.adminAuditLog) ? db.adminAuditLog.slice(0, 30) : [],
+    });
+  });
+
+  app.get('/api/admin/sanctuaries', adminAuth.requireAdminAuth, (_req, res) => {
+    const list = Object.values(db.sanctuaries || {})
+      .filter((s) => s && !GENERATED_GROVE_CODES.has(s.syncCode))
+      .map((s) => ({
+        syncCode: s.syncCode,
+        keeperName: s.keeperName,
+        sanctuaryName: s.sanctuaryName,
+        avatarSpecies: s.avatarSpecies || 'raccoon',
+        level: clampInt(s.level, 1, 999, 1),
+        xp: clampInt(s.xp, 0, 1000000, 0),
+        coins: clampInt(s.coins, 0, 10000000, 0),
+        gems: clampInt(s.gems, 0, 1000000, 0),
+        prestige: computePrestige(s),
+        gridSize: s.gridSize === 24 ? 24 : s.gridSize === 18 ? 18 : 12,
+        animalCount: Array.isArray(s.enclosures) ? s.enclosures.length : 0,
+        cropCount: Array.isArray(s.crops) ? s.crops.length : 0,
+        decorCount: Array.isArray(s.decorations) ? s.decorations.length : 0,
+        updatedAt: s.updatedAt || 0,
+        stats: s.stats || {
+          totalFeeds: 0,
+          totalGrooms: 0,
+          totalHarvests: 0,
+          totalTrades: 0,
+          friendsVisited: 0,
+        },
+      }))
+      .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    return res.json({ sanctuaries: list });
+  });
+
+  app.get('/api/admin/sanctuaries/:code', adminAuth.requireAdminAuth, (req, res) => {
+    const code = sanitizeCode(req.params.code);
+    const target = db.sanctuaries[code];
+    if (!target) {
+      return res.status(404).json({ error: 'Sanctuary not found.' });
+    }
+    return res.json({ sanctuary: target });
+  });
+
+  app.patch('/api/admin/sanctuaries/:code', adminAuth.requireAdminAuth, async (req, res) => {
+    const code = sanitizeCode(req.params.code);
+    const target = db.sanctuaries[code];
+    if (!target) {
+      return res.status(404).json({ error: 'Sanctuary not found.' });
+    }
+    const body = req.body || {};
+    const changes = [];
+    if (typeof body.keeperName === 'string' && body.keeperName.trim()) {
+      target.keeperName = sanitizeText(body.keeperName, 28, target.keeperName);
+      changes.push(`keeper=${target.keeperName}`);
+    }
+    if (typeof body.sanctuaryName === 'string' && body.sanctuaryName.trim()) {
+      target.sanctuaryName = sanitizeText(body.sanctuaryName, 36, target.sanctuaryName);
+      changes.push(`name=${target.sanctuaryName}`);
+    }
+    if (body.coins !== undefined) {
+      target.coins = clampInt(body.coins, 0, 10000000, target.coins);
+      changes.push(`coins=${target.coins}`);
+    }
+    if (body.gems !== undefined) {
+      target.gems = clampInt(body.gems, 0, 1000000, target.gems);
+      changes.push(`gems=${target.gems}`);
+    }
+    if (body.level !== undefined) {
+      target.level = clampInt(body.level, 1, 999, target.level);
+      changes.push(`level=${target.level}`);
+    }
+    if (body.resetDailyTasks === true) {
+      delete target.dailyQuests;
+      changes.push('resetDailyTasks');
+    }
+    target.prestige = computePrestige(target);
+    target.updatedAt = Date.now();
+
+    if (mysqlStore) {
+      await mysqlStore.upsertSanctuary(target);
+    } else {
+      flushDatabaseNow();
+    }
+    await recordAdminAudit(
+      req.adminUser.username,
+      'sanctuary.update',
+      `Updated ${code}${changes.length ? ` (${changes.join(', ')})` : ''}`,
+    );
+    broadcast({ type: 'leaderboard:updated', leaderboard: buildLeaderboard() });
+    return res.json({ ok: true, sanctuary: target });
+  });
+
+  app.delete('/api/admin/sanctuaries/:code', adminAuth.requireAdminAuth, async (req, res) => {
+    const code = sanitizeCode(req.params.code);
+    const target = db.sanctuaries[code];
+    if (!target) {
+      return res.status(404).json({ error: 'Sanctuary not found.' });
+    }
+    const label = `${target.sanctuaryName} (${code})`;
+    delete db.sanctuaries[code];
+
+    // Clean up marketplace listings, direct trades, and saved friend references for this sanctuary
+    db.marketplace = (db.marketplace || []).filter((l) => l.sellerCode !== code);
+    db.directTrades = (db.directTrades || []).filter(
+      (t) => t.fromCode !== code && t.toCode !== code,
+    );
+    for (const s of Object.values(db.sanctuaries)) {
+      if (s && Array.isArray(s.savedFriends)) {
+        s.savedFriends = s.savedFriends.filter((fc) => fc !== code);
+      }
+    }
+
+    if (mysqlStore) {
+      await mysqlStore.deleteSanctuary(code);
+      await mysqlStore.deleteListingsBySeller(code);
+    } else {
+      flushDatabaseNow();
+    }
+    await recordAdminAudit(req.adminUser.username, 'sanctuary.delete', `Deleted sanctuary ${label}`);
+    broadcast({ type: 'leaderboard:updated', leaderboard: buildLeaderboard() });
+    broadcast({ type: 'marketplace:updated', listings: db.marketplace });
+    return res.json({ ok: true, deletedCode: code });
+  });
+
+  app.get('/api/admin/chat', adminAuth.requireAdminAuth, (_req, res) => {
+    return res.json({ messages: Array.isArray(db.chat) ? db.chat.slice(-80) : [] });
+  });
+
+  app.delete('/api/admin/chat/:id', adminAuth.requireAdminAuth, async (req, res) => {
+    const id = sanitizeText(req.params.id, 64);
+    const before = db.chat.length;
+    db.chat = db.chat.filter((m) => m.id !== id);
+    if (db.chat.length === before) {
+      return res.status(404).json({ error: 'Chat message not found.' });
+    }
+    if (mysqlStore) {
+      await mysqlStore.deleteChat(id);
+    } else {
+      flushDatabaseNow();
+    }
+    await recordAdminAudit(req.adminUser.username, 'chat.delete', `Deleted chat message ${id}`);
+    broadcast({ type: 'chat:sync', messages: db.chat.slice(-50) });
+    return res.json({ ok: true, deletedId: id });
+  });
+
+  app.post('/api/admin/chat/clear', adminAuth.requireAdminAuth, async (req, res) => {
+    const count = db.chat.length;
+    db.chat = [];
+    if (mysqlStore) {
+      await mysqlStore.clearChat();
+    } else {
+      flushDatabaseNow();
+    }
+    await recordAdminAudit(req.adminUser.username, 'chat.clear', `Cleared ${count} chat messages`);
+    broadcast({ type: 'chat:sync', messages: [] });
+    return res.json({ ok: true, cleared: count });
+  });
+
+  app.post('/api/admin/broadcast', adminAuth.requireAdminAuth, async (req, res) => {
+    const cleanText = sanitizeText(req.body?.text, 220);
+    if (!cleanText) {
+      return res.status(400).json({ error: 'Announcement text is required.' });
+    }
+    const now = Date.now();
+    const chatMsg = {
+      id: `chat-admin-${now}-${Math.random().toString(36).slice(2, 6)}`,
+      senderCode: 'SYSTEM',
+      senderName: 'Wildgrove Admin',
+      avatarSpecies: 'golden_fox',
+      text: cleanText,
+      tag: 'milestone',
+      timestamp: now,
+    };
+    db.chat.push(chatMsg);
+    if (db.chat.length > 80) db.chat = db.chat.slice(-80);
+    if (mysqlStore) {
+      await mysqlStore.insertChat(chatMsg);
+    } else {
+      flushDatabaseNow();
+    }
+    await recordAdminAudit(req.adminUser.username, 'chat.broadcast', cleanText.slice(0, 120));
+    broadcast({ type: 'chat:message', message: chatMsg });
+    return res.json({ ok: true, message: chatMsg });
+  });
+
+  app.get('/api/admin/marketplace', adminAuth.requireAdminAuth, (_req, res) => {
+    return res.json({ listings: Array.isArray(db.marketplace) ? db.marketplace : [] });
+  });
+
+  app.delete('/api/admin/marketplace/:id', adminAuth.requireAdminAuth, async (req, res) => {
+    const id = sanitizeText(req.params.id, 64);
+    const before = db.marketplace.length;
+    db.marketplace = db.marketplace.filter((l) => l.id !== id);
+    if (db.marketplace.length === before) {
+      return res.status(404).json({ error: 'Marketplace listing not found.' });
+    }
+    if (mysqlStore) {
+      await mysqlStore.deleteListing(id);
+    } else {
+      flushDatabaseNow();
+    }
+    await recordAdminAudit(req.adminUser.username, 'marketplace.delete', `Removed listing ${id}`);
+    broadcast({ type: 'marketplace:updated', listings: db.marketplace });
+    return res.json({ ok: true, deletedId: id });
+  });
+
+  app.post('/api/admin/marketplace/reset', adminAuth.requireAdminAuth, async (req, res) => {
+    const reseed = req.body?.reseed !== false;
+    db.marketplace = reseed ? buildSeedMarketplace() : [];
+    if (mysqlStore) {
+      await mysqlStore.clearMarketplace();
+      for (const item of db.marketplace) {
+        await mysqlStore.upsertListing(item);
+      }
+    } else {
+      flushDatabaseNow();
+    }
+    await recordAdminAudit(
+      req.adminUser.username,
+      'marketplace.reset',
+      reseed ? 'Reset and reseeded marketplace listings' : 'Cleared all marketplace listings',
+    );
+    broadcast({ type: 'marketplace:updated', listings: db.marketplace });
+    return res.json({ ok: true, listings: db.marketplace });
+  });
+
+  app.get('/api/admin/trades', adminAuth.requireAdminAuth, (_req, res) => {
+    return res.json({ trades: Array.isArray(db.directTrades) ? db.directTrades : [] });
+  });
+
+  app.delete('/api/admin/trades/:id', adminAuth.requireAdminAuth, async (req, res) => {
+    const id = sanitizeText(req.params.id, 64);
+    if (!Array.isArray(db.directTrades)) db.directTrades = [];
+    const before = db.directTrades.length;
+    db.directTrades = db.directTrades.filter((t) => t.id !== id);
+    if (db.directTrades.length === before) {
+      return res.status(404).json({ error: 'Trade offer not found.' });
+    }
+    if (!mysqlStore) flushDatabaseNow();
+    await recordAdminAudit(req.adminUser.username, 'trade.delete', `Removed direct trade ${id}`);
+    return res.json({ ok: true, deletedId: id });
+  });
+
+  app.get('/api/admin/export', adminAuth.requireAdminAuth, async (req, res) => {
+    await recordAdminAudit(req.adminUser.username, 'server.export', 'Downloaded JSON server snapshot');
+    return res.json({
+      exportedAt: new Date().toISOString(),
+      storage: mysqlStore ? 'mysql' : 'file',
+      sanctuaries: db.sanctuaries || {},
+      marketplace: db.marketplace || [],
+      chat: db.chat || [],
+      directTrades: db.directTrades || [],
+    });
+  });
+
+  app.post('/api/admin/reset-server', adminAuth.requireAdminAuth, async (req, res) => {
+    const {
+      confirmPhrase,
+      resetSanctuaries = true,
+      resetMarketplace = true,
+      resetChat = true,
+      resetTrades = true,
+      reseedMarketplace = true,
+    } = req.body || {};
+
+    if (String(confirmPhrase || '').trim() !== 'RESET WILDGROVE') {
+      return res.status(400).json({
+        error: 'Confirmation phrase mismatch. Type RESET WILDGROVE exactly to proceed.',
+      });
+    }
+
+    const summary = [];
+    if (resetSanctuaries) {
+      const n = Object.keys(db.sanctuaries || {}).length;
+      db.sanctuaries = buildSeedSanctuaries();
+      if (mysqlStore) await mysqlStore.clearSanctuaries();
+      summary.push(`${n} sanctuaries cleared`);
+    }
+    if (resetMarketplace) {
+      db.marketplace = reseedMarketplace ? buildSeedMarketplace() : [];
+      if (mysqlStore) {
+        await mysqlStore.clearMarketplace();
+        for (const item of db.marketplace) {
+          await mysqlStore.upsertListing(item);
+        }
+      }
+      summary.push(reseedMarketplace ? 'marketplace reseeded' : 'marketplace cleared');
+    }
+    if (resetChat) {
+      const n = (db.chat || []).length;
+      db.chat = buildSeedChat();
+      if (mysqlStore) await mysqlStore.clearChat();
+      summary.push(`${n} chat messages cleared`);
+    }
+    if (resetTrades) {
+      const n = (db.directTrades || []).length;
+      db.directTrades = [];
+      summary.push(`${n} direct trades cleared`);
+    }
+
+    if (!mysqlStore) {
+      flushDatabaseNow();
+    }
+
+    await recordAdminAudit(
+      req.adminUser.username,
+      'server.reset',
+      `Server reset executed: ${summary.join(', ') || 'no scopes selected'}`,
+    );
+
+    broadcast({ type: 'leaderboard:updated', leaderboard: buildLeaderboard() });
+    broadcast({ type: 'marketplace:updated', listings: db.marketplace });
+    broadcast({ type: 'chat:sync', messages: db.chat.slice(-50) });
+
+    return res.json({
+      ok: true,
+      summary,
+    });
   });
 
   // Return clean JSON 404 for unknown API routes

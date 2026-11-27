@@ -30,6 +30,10 @@ const VALID_SPECIES = new Set([
   'golden_fox',
   'snow_leopard',
   'river_otter',
+  'tree_frog',
+  'chameleon',
+  'giant_tortoise',
+  'bearded_dragon',
 ]);
 
 const VALID_CROPS = new Set([
@@ -41,6 +45,10 @@ const VALID_CROPS = new Set([
   'fox_berry',
   'ice_fish',
   'river_reed',
+  'lotus_dew',
+  'hibiscus',
+  'dandelion',
+  'cactus_fig',
 ]);
 
 const VALID_DECORS = new Set([
@@ -54,6 +62,13 @@ const VALID_DECORS = new Set([
   'gazebo',
   'cobble_path',
   'hay_cart',
+  'keeper_cottage',
+  'windmill',
+  'greenhouse',
+  'wooden_bridge_arch',
+  'wishing_well',
+  'campfire_lounge',
+  'circus_tent',
 ]);
 
 const VALID_RESOURCES = new Set([
@@ -65,6 +80,10 @@ const VALID_RESOURCES = new Set([
   'fox_berry_treat',
   'ice_fish_treat',
   'river_reed_treat',
+  'lotus_dew_treat',
+  'hibiscus_treat',
+  'dandelion_treat',
+  'cactus_fig_treat',
   'lucky_acorn',
   'silverback_amber',
   'wing_dust',
@@ -74,6 +93,10 @@ const VALID_RESOURCES = new Set([
   'sun_crystal',
   'frost_pelt',
   'river_pearl',
+  'jade_lily_dew',
+  'prism_scale',
+  'ancient_shell_amber',
+  'sunstone_scale',
   'gourmet_treat',
   'sunbeam_fertilizer',
   'meadow_sprinkler',
@@ -90,19 +113,30 @@ const SPECIES_PRESTIGE = {
   golden_fox: 310,
   snow_leopard: 380,
   river_otter: 240,
+  tree_frog: 205,
+  chameleon: 270,
+  giant_tortoise: 285,
+  bearded_dragon: 305,
 };
 
 const DECOR_PRESTIGE = {
-  willow: 65,
-  autumn_maple: 75,
-  bamboo: 50,
-  koi_pond: 120,
-  fountain: 145,
-  lantern_post: 45,
-  flower_arch: 95,
-  gazebo: 180,
-  cobble_path: 15,
-  hay_cart: 55,
+  willow: 35,
+  autumn_maple: 55,
+  bamboo: 30,
+  koi_pond: 70,
+  fountain: 95,
+  lantern_post: 60,
+  flower_arch: 65,
+  gazebo: 140,
+  cobble_path: 12,
+  hay_cart: 45,
+  keeper_cottage: 165,
+  windmill: 150,
+  greenhouse: 175,
+  wooden_bridge_arch: 85,
+  wishing_well: 80,
+  campfire_lounge: 75,
+  circus_tent: 320,
 };
 
 function clampInt(val, min, max, fallback = min) {

@@ -22,7 +22,11 @@ export type CropTypeId =
   | 'bamboo_shoot'
   | 'fox_berry'
   | 'ice_fish'
-  | 'river_reed';
+  | 'river_reed'
+  | 'lotus_dew'
+  | 'hibiscus'
+  | 'dandelion'
+  | 'cactus_fig';
 
 export type DecorTypeId =
   | 'willow'
@@ -52,6 +56,10 @@ export type ResourceId =
   | 'fox_berry_treat'
   | 'ice_fish_treat'
   | 'river_reed_treat'
+  | 'lotus_dew_treat'
+  | 'hibiscus_treat'
+  | 'dandelion_treat'
+  | 'cactus_fig_treat'
   | 'lucky_acorn'
   | 'silverback_amber'
   | 'wing_dust'

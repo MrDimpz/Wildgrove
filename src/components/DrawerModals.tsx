@@ -84,6 +84,10 @@ const CROP_VISUAL_META: Record<CropTypeId, { swatch: string; lookLabel: string }
   fox_berry: { swatch: '#FF9B26', lookLabel: 'Arched vines & glowing amber lanterns' },
   ice_fish: { swatch: '#7AD6F7', lookLabel: 'Frosty stone basin & leaping fish' },
   river_reed: { swatch: '#6B3A22', lookLabel: 'Creek marsh with velvety cattails' },
+  lotus_dew: { swatch: '#E87FB0', lookLabel: 'Mossy lotus pond with pink blossoms' },
+  hibiscus: { swatch: '#E84A7A', lookLabel: 'Tropical vines & bright coral hibiscus' },
+  dandelion: { swatch: '#F5C831', lookLabel: 'Sunny yellow blooms & fluffy seed puffs' },
+  cactus_fig: { swatch: '#D95B43', lookLabel: 'Sandstone bed with prickly-pear figs' },
 };
 
 interface DrawerModalsProps {

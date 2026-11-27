@@ -848,6 +848,26 @@ export function buildCropModel(
     const soil = addShadow(new THREE.Mesh(innerBedGeo, soilMat), false, true);
     soil.position.y = 0.115;
     group.add(soil);
+  } else if (crop.cropType === 'lotus_dew') {
+    const mossyStone = toonMat(0x7c987a);
+    const frame = addShadow(new THREE.Mesh(outerBedGeo, mossyStone));
+    frame.position.y = 0.11;
+    group.add(frame);
+    const pondWater = new THREE.Mesh(
+      innerBedGeo,
+      toonMat(0x52c7b8, { map: textures.waterRipple, emissive: 0x1b6d66, emissiveIntensity: 0.2 }),
+    );
+    pondWater.position.y = 0.125;
+    group.add(pondWater);
+  } else if (crop.cropType === 'cactus_fig') {
+    const sandstoneMat = toonMat(0xd49662);
+    const sandMat = toonMat(0xe8c488);
+    const frame = addShadow(new THREE.Mesh(outerBedGeo, sandstoneMat));
+    frame.position.y = 0.1;
+    group.add(frame);
+    const sandBed = addShadow(new THREE.Mesh(innerBedGeo, sandMat), false, true);
+    sandBed.position.y = 0.115;
+    group.add(sandBed);
   } else {
     const frame = addShadow(new THREE.Mesh(outerBedGeo, woodMat));
     frame.position.y = 0.1;
@@ -1158,6 +1178,170 @@ export function buildCropModel(
         blade.position.set(rx + 0.09, rh * 0.34, rz + 0.05);
         blade.rotation.z = -0.28;
         plantGroup.add(blade);
+      }
+      break;
+    }
+
+    case 'lotus_dew': {
+      const padMat = toonMat(0x43a858);
+      const petalMat = toonMat(0xf58ab8, { emissive: 0x70244a, emissiveIntensity: 0.16 });
+      const innerPetalMat = toonMat(0xffd2e6);
+      const dewMat = toonMat(0xb8f6ff, { emissive: 0x4ccce8, emissiveIntensity: 0.35 });
+
+      const pads: [number, number, number, boolean][] = [
+        [-0.36, -0.32, 0.32, true],
+        [0.36, 0.28, 0.3, true],
+        [0.34, -0.36, 0.24, false],
+        [-0.32, 0.36, 0.25, true],
+      ];
+      for (const [px, pz, pr, hasBloom] of pads) {
+        const pad = addShadow(new THREE.Mesh(new THREE.CylinderGeometry(pr, pr * 0.96, 0.045, 14), padMat));
+        pad.position.set(px, 0.04, pz);
+        addInkOutline(pad, 1.05);
+        plantGroup.add(pad);
+
+        if (hasBloom) {
+          for (let i = 0; i < 6; i++) {
+            const ang = (i / 6) * Math.PI * 2;
+            const petal = addShadow(new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 8), petalMat));
+            petal.scale.set(0.75, 1.25, 0.45);
+            petal.position.set(px + Math.cos(ang) * 0.095, 0.15, pz + Math.sin(ang) * 0.095);
+            petal.rotation.y = -ang;
+            petal.rotation.z = 0.48;
+            plantGroup.add(petal);
+          }
+          const core = new THREE.Mesh(new THREE.SphereGeometry(0.085, 8, 8), innerPetalMat);
+          core.position.set(px, 0.17, pz);
+          plantGroup.add(core);
+
+          const dew = new THREE.Mesh(new THREE.SphereGeometry(0.055, 8, 8), dewMat);
+          dew.position.set(px, 0.26, pz);
+          plantGroup.add(dew);
+        } else {
+          const drop = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 8), dewMat);
+          drop.position.set(px + 0.05, 0.09, pz - 0.03);
+          plantGroup.add(drop);
+        }
+      }
+      break;
+    }
+
+    case 'hibiscus': {
+      const leafMat = toonMat(0x2f8f4e);
+      const leafHiMat = toonMat(0x4eb869);
+      const bloomMat = toonMat(0xf2447b, { emissive: 0x781434, emissiveIntensity: 0.16 });
+      const stamenMat = toonMat(0xffd84a, { emissive: 0x996d00, emissiveIntensity: 0.25 });
+
+      for (const [ox, oz] of offsets) {
+        const shrub = addShadow(new THREE.Mesh(new THREE.SphereGeometry(0.28, 12, 10), leafMat));
+        shrub.scale.set(1.12, 0.85, 1.12);
+        shrub.position.set(ox, 0.24, oz);
+        addInkOutline(shrub, 1.06);
+        plantGroup.add(shrub);
+
+        const topLeaf = new THREE.Mesh(new THREE.SphereGeometry(0.18, 10, 8), leafHiMat);
+        topLeaf.position.set(ox, 0.42, oz);
+        plantGroup.add(topLeaf);
+
+        // Large 5-petal tropical hibiscus bloom on top
+        const flowerGroup = new THREE.Group();
+        flowerGroup.position.set(ox, 0.56, oz);
+        flowerGroup.rotation.x = ox < 0 ? 0.22 : -0.18;
+        flowerGroup.rotation.z = oz < 0 ? -0.18 : 0.2;
+        for (let i = 0; i < 5; i++) {
+          const ang = (i / 5) * Math.PI * 2;
+          const petal = addShadow(new THREE.Mesh(new THREE.SphereGeometry(0.095, 8, 8), bloomMat));
+          petal.scale.set(1.05, 0.42, 0.9);
+          petal.position.set(Math.cos(ang) * 0.1, 0, Math.sin(ang) * 0.1);
+          flowerGroup.add(petal);
+        }
+        const stamen = new THREE.Mesh(new THREE.CapsuleGeometry(0.022, 0.14, 4, 6), stamenMat);
+        stamen.position.y = 0.08;
+        flowerGroup.add(stamen);
+        plantGroup.add(flowerGroup);
+      }
+      break;
+    }
+
+    case 'dandelion': {
+      const leafMat = toonMat(0x52a646);
+      const stemMat = toonMat(0x69ba4e);
+      const yellowMat = toonMat(0xffcf2e, { emissive: 0x8f6700, emissiveIntensity: 0.16 });
+      const puffMat = toonMat(0xfaf8f2, { emissive: 0x88847a, emissiveIntensity: 0.12 });
+
+      const clusters: [number, number, number, boolean][] = [
+        [-0.4, -0.35, 0.48, false],
+        [0.36, -0.32, 0.54, true],
+        [-0.32, 0.36, 0.52, true],
+        [0.4, 0.34, 0.46, false],
+        [0.02, 0.02, 0.62, false],
+      ];
+      for (const [dx, dz, h, isPuff] of clusters) {
+        const tuft = addShadow(new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 8), leafMat));
+        tuft.scale.set(1.2, 0.52, 1.2);
+        tuft.position.set(dx, 0.1, dz);
+        plantGroup.add(tuft);
+
+        const stem = addShadow(new THREE.Mesh(new THREE.CapsuleGeometry(0.024, h, 4, 6), stemMat));
+        stem.position.set(dx, h * 0.52, dz);
+        plantGroup.add(stem);
+
+        const head = addShadow(
+          new THREE.Mesh(
+            new THREE.SphereGeometry(isPuff ? 0.135 : 0.125, 10, 8),
+            isPuff ? puffMat : yellowMat,
+          ),
+        );
+        if (!isPuff) head.scale.set(1.15, 0.72, 1.15);
+        head.position.set(dx, h + 0.08, dz);
+        addInkOutline(head, 1.07);
+        plantGroup.add(head);
+      }
+      break;
+    }
+
+    case 'cactus_fig': {
+      const padMat = toonMat(0x4c9e59);
+      const figMat = toonMat(0xe8483c, { emissive: 0x751a12, emissiveIntensity: 0.18 });
+      const bloomTipMat = toonMat(0xffbe3b);
+
+      const cacti: [number, number, number, number][] = [
+        [-0.36, -0.26, 0.66, 0.2],
+        [0.36, 0.24, 0.62, -0.35],
+        [0.0, 0.0, 0.76, 0.8],
+      ];
+      for (const [cx, cz, h, rotY] of cacti) {
+        const g = new THREE.Group();
+        g.position.set(cx, 0, cz);
+        g.rotation.y = rotY;
+
+        const basePad = addShadow(new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 10), padMat));
+        basePad.scale.set(1.05, h * 1.9, 0.44);
+        basePad.position.y = h * 0.42;
+        addInkOutline(basePad, 1.06);
+        g.add(basePad);
+
+        const sidePad = addShadow(new THREE.Mesh(new THREE.SphereGeometry(0.15, 10, 8), padMat));
+        sidePad.scale.set(0.95, 1.35, 0.42);
+        sidePad.position.set(0.2, h * 0.66, 0);
+        sidePad.rotation.z = -0.45;
+        addInkOutline(sidePad, 1.06);
+        g.add(sidePad);
+
+        for (const [fx, fy] of [
+          [-0.08, h * 0.85],
+          [0.09, h * 0.84],
+          [0.26, h * 0.86],
+        ] as [number, number][]) {
+          const fig = addShadow(new THREE.Mesh(new THREE.CapsuleGeometry(0.055, 0.07, 5, 8), figMat));
+          fig.position.set(fx, fy, 0);
+          g.add(fig);
+          const crown = new THREE.Mesh(new THREE.SphereGeometry(0.032, 6, 6), bloomTipMat);
+          crown.position.set(fx, fy + 0.07, 0);
+          g.add(crown);
+        }
+
+        plantGroup.add(g);
       }
       break;
     }

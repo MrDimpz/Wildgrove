@@ -162,6 +162,9 @@ function findFirstOpenSpot(
 
 export default function App() {
   const [screen, setScreen] = useState<'intro' | 'title' | 'playing'>('intro');
+  const handleIntroComplete = useCallback(() => {
+    setScreen('title');
+  }, []);
   const [sanctuary, setSanctuary] = useState<SanctuaryState>(() => {
     const saved = loadLocalSanctuary();
     return saved ? normalizeSanctuaryState(saved) : createStarterSanctuary();
@@ -2229,7 +2232,7 @@ export default function App() {
 
       {/* Opening Intro Cinematic Video */}
       {screen === 'intro' && (
-        <IntroVideoOverlay onComplete={() => setScreen('title')} />
+        <IntroVideoOverlay onComplete={handleIntroComplete} />
       )}
 
       {/* Title Screen */}

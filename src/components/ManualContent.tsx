@@ -47,13 +47,13 @@ export function ManualContent() {
             </h3>
             <ol className="list-decimal list-inside space-y-1.5 text-xs sm:text-sm text-[#3E4E41] leading-relaxed">
               <li>
-                <strong>Grow &amp; Harvest Treats:</strong> Open <em>Crops</em> to plant berry bushes, mango trees, lavender beds, or alpine herbs. When a crop glows with a golden ring, click it to harvest treats and Coins.
+                <strong>Grow &amp; Harvest Treats:</strong> Open <em>Crops</em> to plant berry bushes, mango trees, lavender beds, herbs, bamboo, fox-berries, glacial fish ponds, or river reeds. Every crop matures in <strong>10:00</strong> (shown as min:sec)—when a plot glows with a golden ring, click it to harvest treats and Coins.
               </li>
               <li>
                 <strong>Feed &amp; Groom Your Animals:</strong> Click any 3D animal enclosure to open its care station. Play the <em>Treat Toss</em> timing mini-game and the <em>Brush &amp; Care</em> scrubbing mini-game to raise Happiness, Bond Level, and collect rare keepsakes.
               </li>
               <li>
-                <strong>Design Your Meadow:</strong> Open <em>Build</em> to place custom enclosures, flora, ponds, and festival lanterns, or switch terrain themes and live weather.
+                <strong>Design &amp; Rearrange Your Meadow:</strong> Open <em>Build</em> to place custom enclosures, flora, ponds, and lanterns, or tap <em>Edit</em> on the bottom dock to pick up and move any placed item to a new spot.
               </li>
               <li>
                 <strong>Trade, Visit &amp; Compete:</strong> Sell rare drops on the live <em>Market</em>, visit friends&apos; 3D sanctuaries for Care Gift coins, and climb the Global Prestige <em>Ranks</em>.
@@ -146,14 +146,40 @@ export function ManualContent() {
         <div className="space-y-4 text-xs sm:text-sm text-[#3E4E41]">
           <div className="p-4 rounded-2xl bg-[#F3ECE0] border border-[#263129]/10 space-y-2">
             <h3 className="font-display font-bold text-base text-[#233026]">
-              Grid-Based Habitat Customization
+              Grid-Based Habitat Customization &amp; Rearranging
             </h3>
             <p className="leading-relaxed">
-              Your sanctuary meadow is a <strong>12×12 tile grid</strong>. Animal enclosures occupy a <strong>2×2</strong> footprint, while crops, flora, ponds, and pathways occupy <strong>1×1</strong> tiles. While placing an item, hover or tap open land—<strong>green</strong> indicates a valid spot and <strong>coral</strong> indicates a blocked tile.
+              Your sanctuary meadow begins as a <strong>12×12 tile grid</strong> (144 tiles) and can be expanded all the way up to a <strong>24×24 Grand Sanctuary</strong> (576 tiles). Animal enclosures occupy a <strong>2×2</strong> footprint, while crops, flora, ponds, and pathways occupy <strong>1×1</strong> tiles.
+            </p>
+            <p className="leading-relaxed">
+              While placing or moving an item, hover or tap open land—<strong>green</strong> indicates a valid spot and <strong>coral</strong> indicates a blocked tile. Tap the <strong>Edit</strong> button on the bottom dock anytime to pick up and rearrange placed enclosures, crops, or decorations (and rotate decorations 90°).
             </p>
             <p className="leading-relaxed">
               Every enclosure, decoration, Exotic Variant, and Bond Level increases your <strong>Sanctuary Prestige</strong>, which determines your global rank.
             </p>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-[#E9F2EC] border border-[#2F6E49]/25 space-y-2.5 text-[#273B2D]">
+            <h3 className="font-display font-bold text-base text-[#233026]">
+              How to Expand Your Plot to 24×24
+            </h3>
+            <p className="leading-relaxed">
+              Need more room for all 8 animal species, crop plots, and botanical gardens? Expand your buildable meadow in two permanent stages:
+            </p>
+            <ol className="list-decimal list-inside space-y-1.5 text-xs sm:text-sm leading-relaxed">
+              <li>
+                Open <strong>Build</strong> from the bottom dock and select the <strong>Terrain &amp; Plot</strong> tab.
+              </li>
+              <li>
+                In the <strong>Meadow Plot Expansion</strong> panel, unlock <strong>Stage 1 (12×12 → 18×18)</strong> for <strong>3,500 Coins + 20 Gems</strong>. This adds 180 fresh tiles (324 total) around all four sides.
+              </li>
+              <li>
+                Once at 18×18, return to <strong>Build → Terrain &amp; Plot</strong> and unlock <strong>Stage 2 (18×18 → 24×24)</strong> for <strong>10,000 Coins + 50 Gems</strong> to open the full <strong>24×24 Grand Sanctuary</strong> (576 buildable tiles).
+              </li>
+              <li>
+                Your existing enclosures, crops, and decor stay neatly centered when your land expands—use the <strong>Edit</strong> button on the bottom dock to spread them out into your new borders!
+              </li>
+            </ol>
           </div>
 
           <div className="p-4 rounded-2xl bg-[#F3ECE0] border border-[#263129]/10 space-y-2">
@@ -161,7 +187,7 @@ export function ManualContent() {
               Environment Themes &amp; Procedural Weather
             </h3>
             <p className="leading-relaxed">
-              Click the weather icon in the top-right bar or open <strong>Build → Terrain Aesthetics</strong> to switch biome turf, lighting, and live 3D weather:
+              Open <strong>Tools</strong> in the top bar or go to <strong>Build → Terrain &amp; Plot</strong> to switch biome turf, lighting, and live 3D weather:
             </p>
             <ul className="space-y-1 text-xs text-[#4B5A4E] list-disc list-inside">
               <li><strong>Sunlit Meadow:</strong> Warm pasture sunlight with drifting golden pollen and petals.</li>

@@ -73,7 +73,12 @@ const VALID_RESOURCES = new Set([
   'sun_crystal',
   'frost_pelt',
   'river_pearl',
+  'gourmet_treat',
+  'sunbeam_fertilizer',
+  'meadow_sprinkler',
 ]);
+
+const VALID_BOND_SOURCES = new Set(['adopted', 'feed', 'groom', 'exotic', 'gourmet', 'bred']);
 
 const SPECIES_PRESTIGE = {
   raccoon: 140,
@@ -159,48 +164,151 @@ function computePrestige(state) {
 
 function sanitizeSanctuary(code, incoming) {
   const now = Date.now();
+  const gridSize = incoming.gridSize === 24 ? 24 : incoming.gridSize === 18 ? 18 : 12;
+  const maxEncCoord = Math.max(0, gridSize - 2);
+  const maxTileCoord = Math.max(0, gridSize - 1);
 
-  const rawEnclosures = Array.isArray(incoming.enclosures) ? incoming.enclosures.slice(0, 36) : [];
+  const rawEnclosures = Array.isArray(incoming.enclosures) ? incoming.enclosures.slice(0, 96) : [];
   const enclosures = rawEnclosures
     .filter((e) => e && typeof e === 'object')
-    .map((e, idx) => ({
-      id: sanitizeText(e.id, 48, `enc-${idx}-${now}`),
-      species: VALID_SPECIES.has(e.species) ? e.species : 'raccoon',
-      name: sanitizeText(e.name, 28, 'Companion'),
-      variant: e.variant === 'exotic' ? 'exotic' : 'classic',
-      gridX: clampInt(e.gridX, 0, 10, 0),
-      gridZ: clampInt(e.gridZ, 0, 10, 0),
-      happiness: clampInt(e.happiness, 0, 100, 80),
-      hunger: clampInt(e.hunger, 0, 100, 80),
-      grooming: clampInt(e.grooming, 0, 100, 80),
-      bondLevel: clampInt(e.bondLevel, 1, 10, 1),
-      lastFedAt: clampInt(e.lastFedAt, 0, now + 86400000, now),
-      lastGroomedAt: clampInt(e.lastGroomedAt, 0, now + 86400000, now),
-      visitorHearts: clampInt(e.visitorHearts, 0, 100000, 0),
-    }));
+    .map((e, idx) => {
+      const lastFedAt = clampInt(e.lastFedAt, 0, now + 86400000, now);
+      const lastGroomedAt = clampInt(e.lastGroomedAt, 0, now + 86400000, now);
+      const adoptedAt = clampInt(
+        e.adoptedAt,
+        0,
+        now + 86400000,
+        Math.min(lastFedAt, lastGroomedAt),
+      );
+      const bondHistory = Array.isArray(e.bondHistory)
+        ? e.bondHistory
+            .filter((b) => b && typeof b === 'object')
+            .slice(0, 16)
+            .map((b) => ({
+              level: clampInt(b.level, 1, 10, 1),
+              reachedAt: clampInt(b.reachedAt, 0, now + 86400000, adoptedAt),
+              source: VALID_BOND_SOURCES.has(b.source) ? b.source : 'feed',
+            }))
+        : undefined;
 
-  const rawCrops = Array.isArray(incoming.crops) ? incoming.crops.slice(0, 64) : [];
+      const parentNames =
+        Array.isArray(e.parentNames) && e.parentNames.length === 2
+          ? [sanitizeText(e.parentNames[0], 28, 'Parent'), sanitizeText(e.parentNames[1], 28, 'Parent')]
+          : undefined;
+
+      return {
+        id: sanitizeText(e.id, 48, `enc-${idx}-${now}`),
+        species: VALID_SPECIES.has(e.species) ? e.species : 'raccoon',
+        name: sanitizeText(e.name, 28, 'Companion'),
+        ...(typeof e.bio === 'string' && e.bio.trim() ? { bio: sanitizeText(e.bio, 120) } : {}),
+        variant: e.variant === 'exotic' ? 'exotic' : 'classic',
+        gridX: clampInt(e.gridX, 0, maxEncCoord, 0),
+        gridZ: clampInt(e.gridZ, 0, maxEncCoord, 0),
+        happiness: clampInt(e.happiness, 0, 100, 80),
+        hunger: clampInt(e.hunger, 0, 100, 80),
+        grooming: clampInt(e.grooming, 0, 100, 80),
+        bondLevel: clampInt(e.bondLevel, 1, 10, 1),
+        lastFedAt,
+        lastGroomedAt,
+        visitorHearts: clampInt(e.visitorHearts, 0, 100000, 0),
+        adoptedAt,
+        timesFed: clampInt(e.timesFed, 0, 1000000, 0),
+        timesGroomed: clampInt(e.timesGroomed, 0, 1000000, 0),
+        ...(bondHistory && bondHistory.length > 0 ? { bondHistory } : {}),
+        ...(e.isBaby ? { isBaby: true } : {}),
+        ...(typeof e.hybridTrait === 'string' && e.hybridTrait.trim()
+          ? { hybridTrait: sanitizeText(e.hybridTrait, 36) }
+          : {}),
+        ...(parentNames ? { parentNames } : {}),
+      };
+    });
+
+  const rawCrops = Array.isArray(incoming.crops) ? incoming.crops.slice(0, 200) : [];
   const crops = rawCrops
     .filter((c) => c && typeof c === 'object')
-    .map((c, idx) => ({
-      id: sanitizeText(c.id, 48, `crop-${idx}-${now}`),
-      cropType: VALID_CROPS.has(c.cropType) ? c.cropType : 'berry',
-      gridX: clampInt(c.gridX, 0, 11, 0),
-      gridZ: clampInt(c.gridZ, 0, 11, 0),
-      plantedAt: clampInt(c.plantedAt, 0, now + 86400000, now),
-      growDurationMs: clampInt(c.growDurationMs, 5000, 86400000, 600000),
-    }));
+    .map((c, idx) => {
+      const fertilized = Boolean(c.fertilized);
+      return {
+        id: sanitizeText(c.id, 48, `crop-${idx}-${now}`),
+        cropType: VALID_CROPS.has(c.cropType) ? c.cropType : 'berry',
+        gridX: clampInt(c.gridX, 0, maxTileCoord, 0),
+        gridZ: clampInt(c.gridZ, 0, maxTileCoord, 0),
+        plantedAt: clampInt(c.plantedAt, 0, now + 86400000, now),
+        growDurationMs: fertilized ? 300000 : 600000,
+        ...(fertilized ? { fertilized: true } : {}),
+      };
+    });
 
-  const rawDecors = Array.isArray(incoming.decorations) ? incoming.decorations.slice(0, 120) : [];
+  const rawDecors = Array.isArray(incoming.decorations) ? incoming.decorations.slice(0, 350) : [];
   const decorations = rawDecors
     .filter((d) => d && typeof d === 'object')
     .map((d, idx) => ({
       id: sanitizeText(d.id, 48, `dec-${idx}-${now}`),
       decorType: VALID_DECORS.has(d.decorType) ? d.decorType : 'lantern_post',
-      gridX: clampInt(d.gridX, 0, 11, 0),
-      gridZ: clampInt(d.gridZ, 0, 11, 0),
+      gridX: clampInt(d.gridX, 0, maxTileCoord, 0),
+      gridZ: clampInt(d.gridZ, 0, maxTileCoord, 0),
       rotation: clampInt(d.rotation, 0, 3, 0),
     }));
+
+  const rawStorage = Array.isArray(incoming.storageCrate) ? incoming.storageCrate.slice(0, 120) : [];
+  const storageCrate = rawStorage
+    .filter((s) => s && typeof s === 'object' && s.item && typeof s.item === 'object')
+    .map((s) => ({
+      kind: s.kind === 'enclosure' || s.kind === 'crop' ? s.kind : 'decor',
+      item: s.item,
+      storedAt: clampInt(s.storedAt, 0, now + 86400000, now),
+    }));
+
+  const rawQuests = incoming.dailyQuests && typeof incoming.dailyQuests === 'object' ? incoming.dailyQuests : null;
+  const dailyQuests =
+    rawQuests && typeof rawQuests.date === 'string' && Array.isArray(rawQuests.quests)
+      ? {
+          date: sanitizeText(rawQuests.date, 16, new Date().toISOString().slice(0, 10)),
+          quests: rawQuests.quests.slice(0, 6).map((q, i) => ({
+            id: sanitizeText(q?.id, 40, `q-${i}`),
+            type: ['harvest', 'care', 'feed_high', 'visit', 'craft'].includes(q?.type) ? q.type : 'care',
+            title: sanitizeText(q?.title, 64, 'Daily Quest'),
+            target: clampInt(q?.target, 1, 50, 1),
+            progress: clampInt(q?.progress, 0, 50, 0),
+            rewardCoins: clampInt(q?.rewardCoins, 10, 2000, 120),
+            rewardGems: clampInt(q?.rewardGems, 0, 50, 4),
+            rewardLanterns: clampInt(q?.rewardLanterns, 0, 200, 20),
+            claimed: Boolean(q?.claimed),
+          })),
+        }
+      : undefined;
+
+  const savedFriends = Array.isArray(incoming.savedFriends)
+    ? Array.from(new Set(incoming.savedFriends.slice(0, 40).map((f) => sanitizeCode(f)).filter((f) => f.length >= 4)))
+    : [];
+
+  const guestbook = Array.isArray(incoming.guestbook)
+    ? incoming.guestbook
+        .filter((g) => g && typeof g === 'object' && g.message)
+        .slice(0, 40)
+        .map((g, idx) => ({
+          id: sanitizeText(g.id, 48, `gb-${idx}-${now}`),
+          authorName: sanitizeText(g.authorName, 28, 'Keeper'),
+          authorCode: sanitizeCode(g.authorCode || 'GUEST') || 'GUEST',
+          message: sanitizeText(g.message, 140, 'Lovely sanctuary!'),
+          timestamp: clampInt(g.timestamp, 0, now + 86400000, now),
+        }))
+    : [];
+
+  const blueprints = Array.isArray(incoming.blueprints)
+    ? incoming.blueprints
+        .filter((b) => b && typeof b === 'object' && (b.slot === 1 || b.slot === 2 || b.slot === 3))
+        .slice(0, 3)
+        .map((b) => ({
+          slot: b.slot,
+          name: sanitizeText(b.name, 32, `Layout ${b.slot}`),
+          savedAt: clampInt(b.savedAt, 0, now + 86400000, now),
+          gridSize: b.gridSize === 24 ? 24 : b.gridSize === 18 ? 18 : 12,
+          enclosures: Array.isArray(b.enclosures) ? b.enclosures.slice(0, 96) : [],
+          crops: Array.isArray(b.crops) ? b.crops.slice(0, 200) : [],
+          decorations: Array.isArray(b.decorations) ? b.decorations.slice(0, 350) : [],
+        }))
+    : [];
 
   const rawInv = incoming.inventory && typeof incoming.inventory === 'object' ? incoming.inventory : {};
   const rawDaily = incoming.dailyReward && typeof incoming.dailyReward === 'object' ? incoming.dailyReward : {};
@@ -217,9 +325,11 @@ function sanitizeSanctuary(code, incoming) {
     coins: clampInt(incoming.coins, 0, 10000000, 750),
     gems: clampInt(incoming.gems, 0, 1000000, 35),
     prestige: 0,
+    gridSize,
     enclosures,
     crops,
     decorations,
+    storageCrate,
     inventory: createEmptyInventory(rawInv),
     dailyReward: {
       streak: clampInt(rawDaily.streak, 0, 7, 0),
@@ -228,6 +338,7 @@ function sanitizeSanctuary(code, incoming) {
           ? rawDaily.lastClaimDate
           : null,
     },
+    ...(dailyQuests ? { dailyQuests } : {}),
     seasonalEvent: {
       eventId: sanitizeText(rawEvent.eventId, 48, 'autumn-lantern-harvest-2026'),
       lanternPoints: clampInt(rawEvent.lanternPoints, 0, 1000000, 0),
@@ -238,6 +349,10 @@ function sanitizeSanctuary(code, incoming) {
     unlockedAchievements: Array.isArray(incoming.unlockedAchievements)
       ? incoming.unlockedAchievements.slice(0, 32).map((a) => sanitizeText(a, 40)).filter(Boolean)
       : [],
+    savedFriends,
+    guestbook,
+    blueprints,
+    lastIdleCollectedAt: clampInt(incoming.lastIdleCollectedAt, 0, now + 86400000, now),
     stats: {
       totalFeeds: clampInt(rawStats.totalFeeds, 0, 1000000, 0),
       totalGrooms: clampInt(rawStats.totalGrooms, 0, 1000000, 0),
@@ -846,14 +961,19 @@ function loadDatabase() {
       const raw = fs.readFileSync(DB_PATH, 'utf-8');
       const parsed = JSON.parse(raw);
       if (parsed && parsed.sanctuaries && Array.isArray(parsed.marketplace) && Array.isArray(parsed.chat)) {
-        // Normalize inventories so older saves include newer resources
+        // Normalize inventories, gridSize, and 10-minute crop grow times on loaded saves
         for (const [code, s] of Object.entries(parsed.sanctuaries)) {
           if (s && typeof s === 'object') {
+            s.gridSize = s.gridSize === 24 ? 24 : s.gridSize === 18 ? 18 : 12;
+            if (Array.isArray(s.crops)) {
+              s.crops = s.crops.map((c) => (c && typeof c === 'object' ? { ...c, growDurationMs: 600000 } : c));
+            }
             s.inventory = createEmptyInventory(s.inventory || {});
             s.prestige = computePrestige(s);
             parsed.sanctuaries[code] = s;
           }
         }
+        if (!Array.isArray(parsed.directTrades)) parsed.directTrades = [];
         return parsed;
       }
     }
@@ -864,6 +984,7 @@ function loadDatabase() {
     sanctuaries: buildSeedSanctuaries(),
     marketplace: buildSeedMarketplace(),
     chat: buildSeedChat(),
+    directTrades: [],
   };
 }
 
@@ -1141,7 +1262,9 @@ export async function startServer() {
   app.post('/api/sanctuaries/:code/visit-gift', async (req, res) => {
     const code = sanitizeCode(req.params.code);
     const visitorName = sanitizeText(req.body?.visitorName, 28, 'A Fellow Keeper');
+    const visitorCode = sanitizeCode(req.body?.visitorCode || 'GUEST') || 'GUEST';
     const enclosureId = sanitizeText(req.body?.enclosureId, 64, '');
+    const guestbookMessage = sanitizeText(req.body?.guestbookMessage || '', 140, '');
     const target = db.sanctuaries[code];
     if (!target) {
       return res.status(404).json({ error: 'Sanctuary not found' });
@@ -1150,6 +1273,17 @@ export async function startServer() {
     if (enc) {
       enc.visitorHearts = (enc.visitorHearts || 0) + 1;
       enc.happiness = Math.min(100, (enc.happiness || 80) + 6);
+    }
+    if (guestbookMessage) {
+      if (!Array.isArray(target.guestbook)) target.guestbook = [];
+      target.guestbook.unshift({
+        id: `gb-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        authorName: visitorName,
+        authorCode: visitorCode,
+        message: guestbookMessage,
+        timestamp: Date.now(),
+      });
+      target.guestbook = target.guestbook.slice(0, 40);
     }
     target.prestige = computePrestige(target);
     target.updatedAt = Date.now();
@@ -1263,6 +1397,95 @@ export async function startServer() {
     }
     broadcast({ type: 'marketplace:updated', listings: db.marketplace });
     return res.json({ ok: true, purchased: listing });
+  });
+
+  app.delete('/api/marketplace/:id', async (req, res) => {
+    const id = sanitizeText(req.params.id, 64);
+    const sellerCode = sanitizeCode(req.query?.sellerCode || req.body?.sellerCode || '');
+    const idx = db.marketplace.findIndex((l) => l.id === id);
+    if (idx === -1) {
+      return res.status(404).json({ error: 'Listing not found' });
+    }
+    const listing = db.marketplace[idx];
+    if (!sellerCode || listing.sellerCode !== sellerCode) {
+      return res.status(403).json({ error: 'Only the seller can cancel this listing' });
+    }
+    db.marketplace.splice(idx, 1);
+    if (mysqlStore) {
+      try {
+        await mysqlStore.deleteListing(listing.id);
+      } catch (err) {
+        console.warn('MySQL marketplace delete error:', err?.code || err?.message);
+      }
+    } else {
+      persistDatabase();
+    }
+    broadcast({ type: 'marketplace:updated', listings: db.marketplace });
+    return res.json({ ok: true, cancelled: listing });
+  });
+
+  // --- Direct Player-to-Player Trade Offers ---
+  app.get('/api/trades/:code', (req, res) => {
+    const code = sanitizeCode(req.params.code);
+    if (!Array.isArray(db.directTrades)) db.directTrades = [];
+    const list = db.directTrades.filter(
+      (t) => t.status === 'pending' && (t.toCode === code || t.fromCode === code),
+    );
+    return res.json({ trades: list });
+  });
+
+  app.post('/api/trades', (req, res) => {
+    const { fromCode, fromName, toCode, resourceId, itemLabel, quantity, askingCoins, note } = req.body || {};
+    const cleanFrom = sanitizeCode(fromCode);
+    const cleanTo = sanitizeCode(toCode);
+    const cleanRes = sanitizeText(resourceId, 48);
+    if (cleanFrom.length < 4 || cleanTo.length < 4 || cleanFrom === cleanTo || !VALID_RESOURCES.has(cleanRes)) {
+      return res.status(400).json({ error: 'Invalid direct trade parameters' });
+    }
+    if (!Array.isArray(db.directTrades)) db.directTrades = [];
+    const offer = {
+      id: `trd-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      fromCode: cleanFrom,
+      fromName: sanitizeText(fromName, 28, 'Keeper'),
+      toCode: cleanTo,
+      resourceId: cleanRes,
+      itemLabel: sanitizeText(itemLabel, 48, cleanRes),
+      quantity: clampInt(quantity, 1, 20, 1),
+      askingCoins: clampInt(askingCoins, 0, 10000, 0),
+      note: sanitizeText(note || '', 100),
+      status: 'pending',
+      createdAt: Date.now(),
+    };
+    db.directTrades.unshift(offer);
+    if (db.directTrades.length > 100) db.directTrades = db.directTrades.slice(0, 100);
+    persistDatabase();
+    return res.json({ ok: true, offer });
+  });
+
+  app.post('/api/trades/:id/respond', async (req, res) => {
+    const id = sanitizeText(req.params.id, 64);
+    const responderCode = sanitizeCode(req.body?.responderCode || '');
+    const action = req.body?.action === 'accept' ? 'accept' : 'decline';
+    if (!Array.isArray(db.directTrades)) db.directTrades = [];
+    const offer = db.directTrades.find((t) => t.id === id && t.status === 'pending');
+    if (!offer) {
+      return res.status(404).json({ error: 'Trade offer not found or already resolved' });
+    }
+    if (offer.toCode !== responderCode && !(action === 'decline' && offer.fromCode === responderCode)) {
+      return res.status(403).json({ error: 'Not authorized for this trade offer' });
+    }
+    offer.status = action === 'accept' ? 'accepted' : 'declined';
+    if (action === 'accept' && offer.askingCoins > 0) {
+      const sender = db.sanctuaries[offer.fromCode];
+      if (sender) {
+        sender.coins = (sender.coins || 0) + offer.askingCoins;
+        if (mysqlStore) {
+          mysqlStore.upsertSanctuary(sender).catch(() => {});
+        }
+      }
+    }
+    persistDatabase();
+    return res.json({ ok: true, offer });
   });
 
   // --- Leaderboard & Chat REST Fallbacks ---

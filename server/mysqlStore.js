@@ -17,12 +17,18 @@ export class MysqlSanctuaryStore {
   }
 
   static hasConfig() {
-    if (process.env.DATABASE_URL && /^mysql2?:\/\//i.test(process.env.DATABASE_URL)) {
+    const uri = (process.env.MYSQL_URL || process.env.DATABASE_URL || '').trim();
+    if (uri && /^mysql2?:\/\//i.test(uri)) {
       return true;
     }
-    const host = process.env.DB_HOST || process.env.MYSQL_HOST;
-    const user = process.env.DB_USER || process.env.MYSQL_USER;
-    const database = process.env.DB_NAME || process.env.MYSQL_DATABASE;
+    const host = (process.env.MYSQL_HOST || process.env.DB_HOST || '').trim();
+    const user = (process.env.MYSQL_USER || process.env.DB_USER || '').trim();
+    const database = (
+      process.env.MYSQL_NAME ||
+      process.env.MYSQL_DATABASE ||
+      process.env.DB_NAME ||
+      ''
+    ).trim();
     return Boolean(host && user && database);
   }
 
@@ -43,18 +49,25 @@ export class MysqlSanctuaryStore {
     };
 
     let pool;
-    if (process.env.DATABASE_URL && /^mysql2?:\/\//i.test(process.env.DATABASE_URL)) {
+    const uri = (process.env.MYSQL_URL || process.env.DATABASE_URL || '').trim();
+    if (uri && /^mysql2?:\/\//i.test(uri)) {
       pool = mysql.createPool({
-        uri: process.env.DATABASE_URL,
+        uri,
         ...basePoolOptions,
       });
     } else {
-      const host = process.env.DB_HOST || process.env.MYSQL_HOST || '127.0.0.1';
-      const port = Number(process.env.DB_PORT || process.env.MYSQL_PORT || 3306);
-      const user = process.env.DB_USER || process.env.MYSQL_USER;
-      const password = process.env.DB_PASSWORD ?? process.env.MYSQL_PASSWORD ?? '';
-      const database = process.env.DB_NAME || process.env.MYSQL_DATABASE;
-      const ssl = process.env.DB_SSL === 'true' ? { rejectUnauthorized: true } : undefined;
+      const host = (process.env.MYSQL_HOST || process.env.DB_HOST || '127.0.0.1').trim();
+      const port = Number(process.env.MYSQL_PORT || process.env.DB_PORT || 3306);
+      const user = (process.env.MYSQL_USER || process.env.DB_USER || '').trim();
+      const password = process.env.MYSQL_PASSWORD ?? process.env.DB_PASSWORD ?? '';
+      const database = (
+        process.env.MYSQL_NAME ||
+        process.env.MYSQL_DATABASE ||
+        process.env.DB_NAME ||
+        ''
+      ).trim();
+      const sslRaw = (process.env.MYSQL_SSL || process.env.DB_SSL || '').trim().toLowerCase();
+      const ssl = sslRaw === 'true' || sslRaw === '1' ? { rejectUnauthorized: true } : undefined;
 
       pool = mysql.createPool({
         host,

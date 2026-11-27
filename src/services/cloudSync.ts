@@ -6,18 +6,20 @@
 import type {
   ChatMessage,
   CommunitySanctuarySummary,
+  DirectTradeOffer,
   LeaderboardEntry,
   MarketplaceListing,
   ResourceId,
   SanctuaryState,
   SpeciesId,
 } from '../types/game';
-import { computePrestige } from '../data/catalog';
+import { computePrestige, normalizeSanctuaryState } from '../data/catalog';
 
 const STORAGE_KEY = 'wildgrove_sanctuary_save_v1';
 const FALLBACK_SANCTUARIES_KEY = 'wildgrove_fallback_sanctuaries_v1';
 const FALLBACK_MARKET_KEY = 'wildgrove_fallback_market_v1';
 const FALLBACK_CHAT_KEY = 'wildgrove_fallback_chat_v1';
+const FALLBACK_TRADES_KEY = 'wildgrove_fallback_trades_v1';
 
 // Detects once per page load whether the Express backend is running (/api/health)
 // or if the app is deployed as a static Vite site (dist/ only).
@@ -57,6 +59,13 @@ function createEmptyInventory(overrides: Partial<Record<ResourceId, number>> = {
     sun_crystal: 0,
     frost_pelt: 0,
     river_pearl: 0,
+    jade_lily_dew: 0,
+    prism_scale: 0,
+    ancient_shell_amber: 0,
+    sunstone_scale: 0,
+    gourmet_treat: 0,
+    sunbeam_fertilizer: 0,
+    meadow_sprinkler: 0,
     ...overrides,
   };
 }
@@ -614,7 +623,7 @@ export function loadLocalSanctuary(): SanctuaryState | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw) as SanctuaryState;
     if (parsed && parsed.syncCode && Array.isArray(parsed.enclosures)) {
-      return parsed;
+      return normalizeSanctuaryState(parsed);
     }
   } catch {
     // Ignore storage read errors
@@ -725,12 +734,12 @@ export async function pullCloudSave(syncCode: string): Promise<SanctuaryState | 
   if (await isBackendAvailable()) {
     const res = await fetchJson<{ sanctuary?: SanctuaryState }>(`/api/sync/${encodeURIComponent(clean)}`);
     if (res.ok && res.data?.sanctuary) {
-      return res.data.sanctuary;
+      return normalizeSanctuaryState(res.data.sanctuary);
     }
   }
 
   const map = readFallbackMap();
-  return map[clean] || null;
+  return map[clean] ? normalizeSanctuaryState(map[clean]) : null;
 }
 
 export async function fetchCommunitySanctuaries(): Promise<CommunitySanctuarySummary[]> {
@@ -761,6 +770,8 @@ export async function sendVisitGift(
   targetCode: string,
   visitorName: string,
   enclosureId: string,
+  guestbookMessage?: string,
+  visitorCode?: string,
 ): Promise<SanctuaryState | null> {
   if (await isBackendAvailable()) {
     const res = await fetchJson<{ sanctuary?: SanctuaryState }>(
@@ -768,7 +779,7 @@ export async function sendVisitGift(
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ visitorName, enclosureId }),
+        body: JSON.stringify({ visitorName, visitorCode, enclosureId, guestbookMessage }),
       },
     );
     if (res.ok && res.data?.sanctuary) {
@@ -785,9 +796,20 @@ export async function sendVisitGift(
       ? { ...enc, visitorHearts: (enc.visitorHearts || 0) + 1, happiness: Math.min(100, enc.happiness + 6) }
       : enc,
   );
+  const nextGuestbook = [...(target.guestbook || [])];
+  if (guestbookMessage && guestbookMessage.trim()) {
+    nextGuestbook.unshift({
+      id: `gb-${Date.now()}`,
+      authorName: visitorName,
+      authorCode: visitorCode || 'GUEST',
+      message: guestbookMessage.trim().slice(0, 140),
+      timestamp: Date.now(),
+    });
+  }
   const updated: SanctuaryState = {
     ...target,
     enclosures: updatedEnclosures,
+    guestbook: nextGuestbook.slice(0, 40),
     updatedAt: Date.now(),
   };
   updated.prestige = computePrestige(updated);
@@ -875,6 +897,116 @@ export async function buyMarketplaceListing(
   }
   writeFallbackMarketplace(next);
   return { ok: true, purchased: listing };
+}
+
+export async function cancelMarketplaceListing(
+  listingId: string,
+  sellerCode: string,
+): Promise<{ ok: boolean; cancelled?: MarketplaceListing; error?: string }> {
+  if (await isBackendAvailable()) {
+    const res = await fetchJson<{ ok?: boolean; cancelled?: MarketplaceListing; error?: string }>(
+      `/api/marketplace/${encodeURIComponent(listingId)}?sellerCode=${encodeURIComponent(sellerCode)}`,
+      { method: 'DELETE' },
+    );
+    if (res.ok && res.data?.cancelled) {
+      return { ok: true, cancelled: res.data.cancelled };
+    }
+    return { ok: false, error: res.data?.error || 'Could not cancel listing' };
+  }
+  const listings = readFallbackMarketplace();
+  const found = listings.find((l) => l.id === listingId && l.sellerCode === sellerCode);
+  if (!found) return { ok: false, error: 'Listing not found' };
+  writeFallbackMarketplace(listings.filter((l) => l.id !== listingId));
+  return { ok: true, cancelled: found };
+}
+
+function readFallbackTrades(): DirectTradeOffer[] {
+  try {
+    const raw = localStorage.getItem(FALLBACK_TRADES_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed as DirectTradeOffer[];
+    }
+  } catch {
+    // Ignore
+  }
+  return [];
+}
+
+function writeFallbackTrades(trades: DirectTradeOffer[]): void {
+  try {
+    localStorage.setItem(FALLBACK_TRADES_KEY, JSON.stringify(trades.slice(0, 60)));
+  } catch {
+    // Ignore
+  }
+}
+
+export async function fetchDirectTrades(syncCode: string): Promise<DirectTradeOffer[]> {
+  const clean = syncCode.trim().toUpperCase();
+  if (await isBackendAvailable()) {
+    const res = await fetchJson<{ trades?: DirectTradeOffer[] }>(`/api/trades/${encodeURIComponent(clean)}`);
+    if (res.ok && Array.isArray(res.data?.trades)) {
+      return res.data.trades;
+    }
+  }
+  return readFallbackTrades().filter(
+    (t) => t.status === 'pending' && (t.toCode === clean || t.fromCode === clean),
+  );
+}
+
+export async function createDirectTrade(payload: {
+  fromCode: string;
+  fromName: string;
+  toCode: string;
+  resourceId: ResourceId;
+  itemLabel: string;
+  quantity: number;
+  askingCoins: number;
+  note?: string;
+}): Promise<{ ok: boolean; offer?: DirectTradeOffer; error?: string }> {
+  if (await isBackendAvailable()) {
+    const res = await fetchJson<{ ok?: boolean; offer?: DirectTradeOffer; error?: string }>('/api/trades', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (res.ok && res.data?.offer) return { ok: true, offer: res.data.offer };
+    return { ok: false, error: res.data?.error || 'Could not send trade offer' };
+  }
+  const offer: DirectTradeOffer = {
+    id: `trd-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    ...payload,
+    toCode: payload.toCode.trim().toUpperCase(),
+    status: 'pending',
+    createdAt: Date.now(),
+  };
+  writeFallbackTrades([offer, ...readFallbackTrades()]);
+  return { ok: true, offer };
+}
+
+export async function respondDirectTrade(
+  offerId: string,
+  responderCode: string,
+  action: 'accept' | 'decline',
+): Promise<{ ok: boolean; offer?: DirectTradeOffer; error?: string }> {
+  if (await isBackendAvailable()) {
+    const res = await fetchJson<{ ok?: boolean; offer?: DirectTradeOffer; error?: string }>(
+      `/api/trades/${encodeURIComponent(offerId)}/respond`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ responderCode, action }),
+      },
+    );
+    if (res.ok && res.data?.offer) return { ok: true, offer: res.data.offer };
+    return { ok: false, error: res.data?.error || 'Could not update trade offer' };
+  }
+  const all = readFallbackTrades();
+  const target = all.find((t) => t.id === offerId && t.status === 'pending');
+  if (!target) return { ok: false, error: 'Offer not found' };
+  target.status = action === 'accept' ? 'accepted' : 'declined';
+  writeFallbackTrades(all);
+  return { ok: true, offer: target };
 }
 
 export async function fetchLeaderboard(): Promise<LeaderboardEntry[]> {

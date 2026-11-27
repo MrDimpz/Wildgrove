@@ -130,6 +130,83 @@ export function SpeciesIcon({ species, exotic = false, className = 'w-6 h-6' }: 
     );
   }
 
+  if (species === 'tree_frog') {
+    const body = exotic ? '#2A9BF0' : '#4BC45E';
+    const belly = exotic ? '#FFE169' : '#D9F5B8';
+    const cheek = exotic ? '#FF87A2' : '#FF94A8';
+    return (
+      <svg viewBox="0 0 36 36" fill="none" className={className} aria-hidden="true">
+        <circle cx="11" cy="11.5" r="5" fill={body} />
+        <circle cx="25" cy="11.5" r="5" fill={body} />
+        <ellipse cx="18" cy="21" rx="12" ry="9.2" fill={body} />
+        <ellipse cx="18" cy="25" rx="8.2" ry="4.5" fill={belly} />
+        <circle cx="11" cy="11.5" r="3" fill="#FFFDF7" />
+        <circle cx="25" cy="11.5" r="3" fill="#FFFDF7" />
+        <circle cx="11.2" cy="11.5" r="1.8" fill="#1C1918" />
+        <circle cx="24.8" cy="11.5" r="1.8" fill="#1C1918" />
+        <circle cx="10.4" cy="10.7" r="0.7" fill="#FFFFFF" />
+        <circle cx="24" cy="10.7" r="0.7" fill="#FFFFFF" />
+        <ellipse cx="9.8" cy="19.5" rx="2.3" ry="1.4" fill={cheek} opacity="0.85" />
+        <ellipse cx="26.2" cy="19.5" rx="2.3" ry="1.4" fill={cheek} opacity="0.85" />
+        <path d="M13 21.5C15 24 21 24 23 21.5" stroke="#1E4A28" strokeWidth="1.7" strokeLinecap="round" />
+      </svg>
+    );
+  }
+
+  if (species === 'chameleon') {
+    const main = exotic ? '#C56BF0' : '#49C26A';
+    const stripe = exotic ? '#52E0D4' : '#2C8C5B';
+    const crest = exotic ? '#FF9AD5' : '#7EE070';
+    return (
+      <svg viewBox="0 0 36 36" fill="none" className={className} aria-hidden="true">
+        <path d="M11 11C13 5 21 5 24 10L28 18C29 23 25 28 19 28H14C9 28 7 24 8 19L11 11Z" fill={main} />
+        <path d="M12 10C15 6.5 21 6.5 23 10.5" stroke={crest} strokeWidth="3.2" strokeLinecap="round" />
+        <path d="M12 18H16M11 22H16" stroke={stripe} strokeWidth="2.2" strokeLinecap="round" />
+        <circle cx="21.5" cy="16.5" r="4.3" fill={stripe} />
+        <circle cx="21.5" cy="16.5" r="2.7" fill="#FFFDF7" />
+        <circle cx="22" cy="16.5" r="1.5" fill="#1E1918" />
+        <circle cx="21.2" cy="15.8" r="0.6" fill="#FFFFFF" />
+        <path d="M19 23.5C22 23.8 25 23.2 27 22" stroke="#224C34" strokeWidth="1.5" strokeLinecap="round" />
+      </svg>
+    );
+  }
+
+  if (species === 'giant_tortoise') {
+    const skin = exotic ? '#9FD9BE' : '#7FA354';
+    const shell = exotic ? '#E3B044' : '#8C5B34';
+    const rim = exotic ? '#FFF0B8' : '#C99B63';
+    return (
+      <svg viewBox="0 0 36 36" fill="none" className={className} aria-hidden="true">
+        <path d="M6 22C6 12.5 11.5 8 18 8C24.5 8 30 12.5 30 22H6Z" fill={shell} />
+        <path d="M12 12L18 9.5L24 12L23 19H13L12 12Z" fill={rim} opacity="0.45" />
+        <rect x="5" y="20.5" width="26" height="3.5" rx="1.7" fill={rim} />
+        <circle cx="27" cy="23.5" r="5" fill={skin} />
+        <circle cx="28.5" cy="22.4" r="1.4" fill="#1E1917" />
+        <circle cx="28" cy="21.9" r="0.5" fill="#FFFFFF" />
+        <rect x="9.5" y="23.5" width="4.2" height="5.5" rx="2" fill={skin} />
+        <rect x="19" y="23.5" width="4.2" height="5.5" rx="2" fill={skin} />
+      </svg>
+    );
+  }
+
+  if (species === 'bearded_dragon') {
+    const body = exotic ? '#FF7A42' : '#E3A45B';
+    const ruff = exotic ? '#FFD159' : '#B86A2E';
+    return (
+      <svg viewBox="0 0 36 36" fill="none" className={className} aria-hidden="true">
+        <path d="M6 17L10 12L14 14L18 11L22 14L26 12L30 17L27 24L18 29L9 24L6 17Z" fill={ruff} />
+        <path d="M9 15C11 9.5 25 9.5 27 15C28 19.5 24 25.5 18 26.5C12 25.5 8 19.5 9 15Z" fill={body} />
+        <circle cx="13.5" cy="16.5" r="2.1" fill="#F5B82E" />
+        <circle cx="22.5" cy="16.5" r="2.1" fill="#F5B82E" />
+        <circle cx="13.5" cy="16.5" r="1.2" fill="#1F1814" />
+        <circle cx="22.5" cy="16.5" r="1.2" fill="#1F1814" />
+        <circle cx="13" cy="16" r="0.5" fill="#FFFFFF" />
+        <circle cx="22" cy="16" r="0.5" fill="#FFFFFF" />
+        <path d="M13.5 22C15.5 23.6 20.5 23.6 22.5 22" stroke="#6B3A18" strokeWidth="1.5" strokeLinecap="round" />
+      </svg>
+    );
+  }
+
   // Wolf
   const fur = exotic ? '#D9E8F6' : '#77818A';
   const dark = exotic ? '#8EB2D4' : '#4A535C';

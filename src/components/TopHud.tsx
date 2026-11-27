@@ -8,6 +8,7 @@ import {
   ArrowLeft,
   BookOpen,
   Camera,
+  Check,
   ChevronDown,
   ChevronUp,
   Cloud,
@@ -60,6 +61,8 @@ interface TopHudProps {
   movingItemLabel?: string | null;
   movingItemIsDecor?: boolean;
   movingItemCanSell?: boolean;
+  pendingEditTarget?: { gx: number; gz: number; blocked: boolean } | null;
+  onConfirmEditPlacement?: () => void;
   onRotateMovingDecor?: () => void;
   onStoreMovingItem?: () => void;
   onSellMovingItem?: () => void;
@@ -95,6 +98,8 @@ export function TopHud({
   movingItemLabel,
   movingItemIsDecor,
   movingItemCanSell,
+  pendingEditTarget,
+  onConfirmEditPlacement,
   onRotateMovingDecor,
   onStoreMovingItem,
   onSellMovingItem,
@@ -411,13 +416,50 @@ export function TopHud({
 
       {/* Active Edit / Rearrange Mode Strip */}
       {editMode && !placementBanner && !visitingSanctuary && (
-        <div className="pointer-events-auto self-center flex flex-wrap items-center justify-center gap-2 sm:gap-3 bg-[#8C451C] text-[#FAF6EE] px-4 py-2 rounded-xl shadow-md text-xs sm:text-sm font-medium">
+        <div className="pointer-events-auto self-center flex flex-wrap items-center justify-center gap-2 sm:gap-3 bg-[#8C451C] text-[#FAF6EE] px-3.5 sm:px-4 py-2 rounded-xl shadow-md text-xs sm:text-sm font-medium max-w-[96vw]">
           <Move className="w-4 h-4 shrink-0" />
           <span>
-            {movingItemLabel
-              ? `Moving ${movingItemLabel} — Click any open green tile to place`
-              : 'Edit Mode — Click any enclosure, crop, or decoration to pick it up'}
+            {movingItemLabel ? (
+              pendingEditTarget ? (
+                pendingEditTarget.blocked ? (
+                  `${movingItemLabel} — That spot is blocked, tap an open green tile`
+                ) : (
+                  `Place ${movingItemLabel} here? Tap Confirm or choose another tile`
+                )
+              ) : (
+                <>
+                  <span className="sm:hidden">
+                    Picked up {movingItemLabel} — Tap a tile to select new placement
+                  </span>
+                  <span className="hidden sm:inline">
+                    Moving {movingItemLabel} — Click any open green tile to place
+                  </span>
+                </>
+              )
+            ) : (
+              <>
+                <span className="sm:hidden">Edit Mode — Tap an item to pick it up</span>
+                <span className="hidden sm:inline">
+                  Edit Mode — Click any enclosure, crop, or decoration to pick it up
+                </span>
+              </>
+            )}
           </span>
+          {movingItemLabel && pendingEditTarget && onConfirmEditPlacement && (
+            <button
+              type="button"
+              disabled={pendingEditTarget.blocked}
+              onClick={onConfirmEditPlacement}
+              className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg font-bold text-xs shadow-sm whitespace-nowrap transition-colors ${
+                pendingEditTarget.blocked
+                  ? 'bg-[#FCE8E8]/20 text-[#FFD4D4] cursor-not-allowed'
+                  : 'bg-[#2F6E49] hover:bg-[#24573A] text-[#FAF6EE] cursor-pointer'
+              }`}
+            >
+              <Check className="w-3.5 h-3.5" />
+              {pendingEditTarget.blocked ? 'Spot Blocked' : 'Confirm Place'}
+            </button>
+          )}
           {movingItemLabel && movingItemIsDecor && onRotateMovingDecor && (
             <button
               type="button"

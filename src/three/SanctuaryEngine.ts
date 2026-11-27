@@ -39,6 +39,7 @@ export interface EngineCallbacks {
   onPlaceAtTile: (gridX: number, gridZ: number) => void;
   onSelectEditItem: (item: EditableItemRef) => void;
   onMoveEditItemToTile: (gridX: number, gridZ: number) => void;
+  onPreviewEditTarget?: (gridX: number, gridZ: number) => void;
   onOpenCircusTent?: (decorId: string) => void;
   onCollectForage?: (forageId: string) => void;
   onVisitorTip?: (coins: number) => void;
@@ -129,6 +130,7 @@ export class SanctuaryEngine {
   private placementChoice: PlacementChoice | null = null;
   private editMode = false;
   private movingItem: EditableItemRef | null = null;
+  private pendingEditTarget: { gx: number; gz: number } | null = null;
   private isTitlePan = true;
   private photoMode = false;
   private photoOrbit = false;
@@ -422,13 +424,32 @@ export class SanctuaryEngine {
     this.syncBuildCameraMode();
   }
 
-  public setEditState(editMode: boolean, movingItem: EditableItemRef | null): void {
+  public setEditState(
+    editMode: boolean,
+    movingItem: EditableItemRef | null,
+    pendingTarget: { gx: number; gz: number } | null = null,
+  ): void {
     this.editMode = editMode;
     this.movingItem = movingItem;
+    this.pendingEditTarget = editMode && movingItem ? pendingTarget : null;
     if (editMode && movingItem) {
       const span = this.getMovingItemFootprint(movingItem);
       this.hoverTileMesh.scale.set(span, span, 1);
       this.updateSelectedEditRing();
+      if (this.pendingEditTarget && this.currentState) {
+        const clampedX = Math.min(this.currentGridSize - span, Math.max(0, this.pendingEditTarget.gx));
+        const clampedZ = Math.min(this.currentGridSize - span, Math.max(0, this.pendingEditTarget.gz));
+        const worldPos = gridToWorld(clampedX, clampedZ, span, this.currentGridSize);
+        this.hoverTileMesh.position.set(worldPos.x, 0.12, worldPos.z);
+        const blocked = isCellOccupied(this.currentState, clampedX, clampedZ, span, movingItem);
+        (this.hoverTileMesh.material as THREE.MeshBasicMaterial).color.setHex(
+          blocked ? 0xe05252 : 0x35c26b,
+        );
+        this.hoverTileMesh.visible = true;
+      } else if (!this.placementChoice) {
+        this.hoverTileMesh.visible = false;
+        this.hoverGrid = null;
+      }
     } else {
       this.selectedEditRing.visible = false;
       if (!this.placementChoice) {
@@ -1051,13 +1072,15 @@ export class SanctuaryEngine {
 
   private onPointerMove = (e: PointerEvent) => {
     if (this.isTitlePan) return;
+    // On touch devices, finger drags control scrolling/rotation — never overwrite locked mobile preview
+    if (e.pointerType === 'touch') return;
     const now = performance.now();
     if (now - this.lastHoverRaycast < 45) return;
     this.lastHoverRaycast = now;
 
     this.updatePointerNdc(e);
 
-    if ((this.placementChoice || (this.editMode && this.movingItem)) && this.currentState) {
+    if ((this.placementChoice || (this.editMode && this.movingItem && !this.pendingEditTarget)) && this.currentState) {
       const tile = this.raycastGroundTile();
       if (!tile) {
         this.hoverTileMesh.visible = false;
@@ -1113,13 +1136,21 @@ export class SanctuaryEngine {
     }
 
     if (this.editMode && this.movingItem) {
-      const tile = this.hoverGrid || this.raycastGroundTile();
+      const isTouchOrMobile =
+        e.pointerType === 'touch' ||
+        (typeof window !== 'undefined' && window.innerWidth < 640);
+      const tile = isTouchOrMobile
+        ? this.raycastGroundTile()
+        : this.hoverGrid || this.raycastGroundTile();
       if (tile) {
         const fp = this.getMovingItemFootprint(this.movingItem);
-        this.callbacks.onMoveEditItemToTile(
-          Math.min(this.currentGridSize - fp, tile.gx),
-          Math.min(this.currentGridSize - fp, tile.gz),
-        );
+        const gx = Math.min(this.currentGridSize - fp, tile.gx);
+        const gz = Math.min(this.currentGridSize - fp, tile.gz);
+        if (isTouchOrMobile && this.callbacks.onPreviewEditTarget) {
+          this.callbacks.onPreviewEditTarget(gx, gz);
+        } else {
+          this.callbacks.onMoveEditItemToTile(gx, gz);
+        }
       }
       return;
     }

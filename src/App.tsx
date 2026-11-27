@@ -186,6 +186,11 @@ export default function App() {
   const [placementChoice, setPlacementChoice] = useState<PlacementChoice | null>(null);
   const [editMode, setEditMode] = useState(false);
   const [movingItem, setMovingItem] = useState<EditableItemRef | null>(null);
+  const [pendingEditTarget, setPendingEditTarget] = useState<{
+    gx: number;
+    gz: number;
+    blocked: boolean;
+  } | null>(null);
   const [showDemolishConfirm, setShowDemolishConfirm] = useState(false);
   const [decorRotation, setDecorRotation] = useState(0);
   const [terrainTheme, setTerrainTheme] = useState<TerrainThemeId>('meadow');
@@ -246,6 +251,8 @@ export default function App() {
   placementRef.current = placementChoice;
   const movingItemRef = useRef(movingItem);
   movingItemRef.current = movingItem;
+  const pendingEditTargetRef = useRef(pendingEditTarget);
+  pendingEditTargetRef.current = pendingEditTarget;
   const decorRotationRef = useRef(decorRotation);
   decorRotationRef.current = decorRotation;
   const activeDrawerRef = useRef(activeDrawer);
@@ -856,7 +863,14 @@ export default function App() {
       }
       soundEngine.playClick();
       setMovingItem(item);
-      pushToast(`Selected ${label} — click an open tile, Store, or Sell`, 'sky');
+      setPendingEditTarget(null);
+      const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
+      pushToast(
+        isMobile
+          ? `Picked up ${label} — tap a meadow tile to select new spot`
+          : `Selected ${label} — click an open tile, Store, or Sell`,
+        'sky',
+      );
     },
     [pushToast],
   );
@@ -907,10 +921,47 @@ export default function App() {
         };
       });
       setMovingItem(null);
+      setPendingEditTarget(null);
       pushToast('Item moved to its new meadow spot!', 'emerald');
     },
     [pushToast, updateSanctuary],
   );
+
+  const handlePreviewEditTarget = useCallback(
+    (gridX: number, gridZ: number) => {
+      const item = movingItemRef.current;
+      if (!item || visitingRef.current) return;
+      const cur = sanctuaryRef.current;
+      const fp: 1 | 2 =
+        item.kind === 'enclosure'
+          ? 2
+          : item.kind === 'decor'
+            ? (() => {
+                const dec = cur.decorations.find((d) => d.id === item.id);
+                return dec ? getDecorFootprint(dec.decorType) : 1;
+              })()
+            : 1;
+
+      const blocked = isCellOccupied(cur, gridX, gridZ, fp, item);
+      setPendingEditTarget({ gx: gridX, gz: gridZ, blocked });
+      if (blocked) {
+        soundEngine.playError();
+        pushToast('That spot is occupied — tap an open green tile.', 'rose');
+      } else {
+        soundEngine.playClick();
+      }
+    },
+    [pushToast],
+  );
+
+  const handleConfirmEditPlacement = useCallback(() => {
+    const target = pendingEditTargetRef.current;
+    if (!target || target.blocked) {
+      soundEngine.playError();
+      return;
+    }
+    handleMoveEditItemToTile(target.gx, target.gz);
+  }, [handleMoveEditItemToTile]);
 
   const handleRotateMovingDecor = useCallback(() => {
     const item = movingItemRef.current;
@@ -927,6 +978,7 @@ export default function App() {
   const handleStoreMovingItem = useCallback(() => {
     const item = movingItemRef.current;
     if (!item || visitingRef.current) return;
+    setPendingEditTarget(null);
     soundEngine.playPlace();
     updateSanctuary((prev) => {
       const crate: StorageCrateItem[] = [...(prev.storageCrate || [])];
@@ -991,6 +1043,7 @@ export default function App() {
         item.kind === 'decor' ? prev.decorations.filter((d) => d.id !== item.id) : prev.decorations,
     }));
     setMovingItem(null);
+    setPendingEditTarget(null);
     pushToast(`Sold ${label} for +${refund} Coins!`, 'gold');
   }, [pushToast, updateSanctuary]);
 
@@ -1109,6 +1162,7 @@ export default function App() {
       onPlaceAtTile: (gx, gz) => handlePlaceAtTile(gx, gz),
       onSelectEditItem: (item) => handleSelectEditItem(item),
       onMoveEditItemToTile: (gx, gz) => handleMoveEditItemToTile(gx, gz),
+      onPreviewEditTarget: (gx, gz) => handlePreviewEditTarget(gx, gz),
       onOpenCircusTent: () => {
         if (photoModeRef.current) return;
         if (visitingRef.current) {
@@ -1139,6 +1193,7 @@ export default function App() {
     handleCollectForage,
     handleHarvestCrop,
     handleMoveEditItemToTile,
+    handlePreviewEditTarget,
     handlePlaceAtTile,
     handleSelectEditItem,
     pushToast,
@@ -1160,8 +1215,11 @@ export default function App() {
   }, [placementChoice]);
 
   useEffect(() => {
-    engineRef.current?.setEditState(editMode, movingItem);
-  }, [editMode, movingItem]);
+    if ((!editMode || !movingItem) && pendingEditTarget) {
+      setPendingEditTarget(null);
+    }
+    engineRef.current?.setEditState(editMode, movingItem, editMode && movingItem ? pendingEditTarget : null);
+  }, [editMode, movingItem, pendingEditTarget]);
 
   useEffect(() => {
     engineRef.current?.setTouchDragMode(touchDragMode);
@@ -1281,6 +1339,7 @@ export default function App() {
           setShowDemolishConfirm(false);
         } else if (movingItemRef.current) {
           setMovingItem(null);
+          setPendingEditTarget(null);
         } else {
           setEditMode(false);
           setPlacementChoice(null);
@@ -2440,13 +2499,19 @@ export default function App() {
                 movingItemLabel={movingItemLabel}
                 movingItemIsDecor={movingItem?.kind === 'decor'}
                 movingItemCanSell={movingItem?.kind === 'crop' || movingItem?.kind === 'decor'}
+                pendingEditTarget={pendingEditTarget}
+                onConfirmEditPlacement={handleConfirmEditPlacement}
                 onRotateMovingDecor={handleRotateMovingDecor}
                 onStoreMovingItem={handleStoreMovingItem}
                 onSellMovingItem={handleSellMovingItem}
-                onCancelMovingItem={() => setMovingItem(null)}
+                onCancelMovingItem={() => {
+                  setMovingItem(null);
+                  setPendingEditTarget(null);
+                }}
                 onExitEditMode={() => {
                   setEditMode(false);
                   setMovingItem(null);
+                  setPendingEditTarget(null);
                 }}
                 onRequestDemolish={() => {
                   soundEngine.playClick();
